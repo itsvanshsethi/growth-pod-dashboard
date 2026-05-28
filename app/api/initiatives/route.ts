@@ -15,6 +15,14 @@ async function fetchRange(sheetId: string, range: string, apiKey: string): Promi
   return (json.values as string[][]) || [];
 }
 
+async function getFirstSheetName(sheetId: string, apiKey: string): Promise<string> {
+  const url = `${SHEETS_BASE}/${sheetId}?fields=sheets.properties.title&key=${apiKey}`;
+  const res = await fetch(url, { next: { revalidate: 0 } });
+  if (!res.ok) return 'Sheet1';
+  const json = await res.json();
+  return json.sheets?.[0]?.properties?.title || 'Sheet1';
+}
+
 export async function GET() {
   const apiKey = process.env.GOOGLE_SHEETS_API_KEY;
 
@@ -26,9 +34,12 @@ export async function GET() {
   }
 
   try {
+    // Discover actual sheet tab names first
+    const firstSheetName = await getFirstSheetName(SHEET_ID, apiKey);
+
     // Fetch main data — read enough columns to cover AX (col 49, so A:AY covers col 0..50)
     const [mainRows, changelogRows] = await Promise.allSettled([
-      fetchRange(SHEET_ID, 'Sheet1!A:AY', apiKey),
+      fetchRange(SHEET_ID, `${firstSheetName}!A:AY`, apiKey),
       fetchRange(SHEET_ID, 'Changelog!A:D', apiKey),
     ]);
 
