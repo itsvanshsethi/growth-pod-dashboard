@@ -22,17 +22,19 @@ async function getAccessToken(): Promise<string> {
     });
     const json = await res.json();
     if (json.access_token) return `Bearer ${json.access_token}`;
-    throw new Error(`OAuth token error: ${JSON.stringify(json)}`);
+    return `token_error:${JSON.stringify(json)}`;
   }
 
   if (apiKey) return `apikey:${apiKey}`;
-  throw new Error('No credentials');
+  return 'no_credentials';
 }
 
 export async function GET() {
   try {
     const auth = await getAccessToken();
-    const headers = auth.startsWith('Bearer ') ? { Authorization: auth } : {};
+    const authMethod = auth.startsWith('Bearer ') ? 'oauth2' : auth.startsWith('apikey:') ? 'apikey' : auth;
+
+    const headers: Record<string, string> = auth.startsWith('Bearer ') ? { Authorization: auth } : {};
     const apiKey = auth.startsWith('apikey:') ? auth.replace('apikey:', '') : '';
 
     const metaUrl = auth.startsWith('Bearer ')
@@ -40,19 +42,22 @@ export async function GET() {
       : `${SHEETS_BASE}/${SHEET_ID}?fields=sheets.properties&key=${apiKey}`;
 
     const metaRes = await fetch(metaUrl, { headers });
+    const metaStatus = metaRes.status;
     const meta = await metaRes.json();
-    const tabs = meta.sheets?.map((s: { properties: { title: string } }) => s.properties.title) || [];
 
-    const samples: Record<string, unknown> = {};
-    for (const tab of tabs.slice(0, 5)) {
-      const rangeUrl = auth.startsWith('Bearer ')
-        ? `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(tab + '!A1:E5')}`
-        : `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(tab + '!A1:E5')}?key=${apiKey}`;
-      const r = await fetch(rangeUrl, { headers });
-      samples[tab] = await r.json();
-    }
-
-    return NextResponse.json({ sheetId: SHEET_ID, tabs, samples, authMethod: auth.startsWith('Bearer ') ? 'oauth2' : 'apikey' });
+    return NextResponse.json({
+      authMethod,
+      sheetId: SHEET_ID,
+      metaStatus,
+      metaRaw: meta,
+      tabs: meta.sheets?.map((s: { properties: { title: string } }) => s.properties.title) || [],
+      envVarsPresent: {
+        GOOGLE_CLIENT_ID: !!process.env.GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: !!process.env.GOOGLE_CLIENT_SECRET,
+        GOOGLE_REFRESH_TOKEN: !!process.env.GOOGLE_REFRESH_TOKEN,
+        GOOGLE_SHEETS_API_KEY: !!process.env.GOOGLE_SHEETS_API_KEY,
+      }
+    });
   } catch (e) {
     return NextResponse.json({ error: String(e) });
   }
