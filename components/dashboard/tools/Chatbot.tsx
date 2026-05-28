@@ -1,25 +1,22 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Initiative, ChatMessage } from '@/lib/types';
+import { generateSuggestedQuestions } from '@/lib/archieContext';
 
-interface ChatbotProps {
+interface ArchieProps {
   initiatives: Initiative[];
 }
 
-const SUGGESTED = [
-  "Which initiatives are at risk?",
-  "What's blocking any in-progress initiatives?",
-  "What went live recently?",
-  "What are the upcoming go-lives?",
-];
-
-export function Chatbot({ initiatives }: ChatbotProps) {
+export function Chatbot({ initiatives }: ArchieProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSugg, setShowSugg] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Regenerate suggestions whenever sheet data reloads
+  const suggestions = useMemo(() => generateSuggestedQuestions(initiatives), [initiatives]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,8 +54,7 @@ export function Chatbot({ initiatives }: ChatbotProps) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
+          for (const line of chunk.split('\n')) {
             if (line.startsWith('data: ')) {
               const data = line.slice(6).trim();
               if (data === '[DONE]') break;
@@ -92,24 +88,31 @@ export function Chatbot({ initiatives }: ChatbotProps) {
 
   return (
     <div className="border border-[#EAE7E2] rounded-xl overflow-hidden">
+      {/* Header */}
       <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#EAE7E2]">
-        <div>
-          <div className="text-[13px] font-medium text-[#1B1B1B]">Ask the dashboard</div>
-          <div className="text-[11px] text-[#8E8E8E]">Powered by Claude · live data from Google Sheet</div>
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-full bg-[#1B1B1B] flex items-center justify-center flex-shrink-0">
+            <span className="text-white text-[11px] font-semibold">A</span>
+          </div>
+          <div>
+            <div className="text-[13px] font-medium text-[#1B1B1B]">Archie</div>
+            <div className="text-[11px] text-[#8E8E8E]">Knows everything about what the Growth Pod is building</div>
+          </div>
         </div>
         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#EAF3DE] text-[#27500A]">Live</span>
       </div>
 
-      <div className="h-60 overflow-y-auto p-3 flex flex-col gap-2" id="chat-msgs-wrap">
+      {/* Messages */}
+      <div className="h-64 overflow-y-auto p-3 flex flex-col gap-2">
         <div className="flex flex-col gap-0.5 max-w-[85%]">
           <div className="text-[13px] leading-relaxed px-3 py-2 rounded-lg bg-[#F7F5F2] text-[#1B1B1B]">
-            Hi! I have live data from your Growth Pod initiatives. Ask me anything about status, blockers, or go-live timelines.
+            Hi! I&apos;m Archie. I know everything about what the Growth Pod is building — ask me about any initiative, blocker, or go-live.
           </div>
         </div>
 
-        {showSugg && (
+        {showSugg && suggestions.length > 0 && (
           <div className="flex flex-col gap-1 mb-1">
-            {SUGGESTED.map((q, i) => (
+            {suggestions.map((q, i) => (
               <button
                 key={i}
                 onClick={() => send(q)}
@@ -123,13 +126,9 @@ export function Chatbot({ initiatives }: ChatbotProps) {
 
         {messages.map((msg, i) => (
           <div key={i} className={`flex flex-col gap-0.5 max-w-[85%] ${msg.role === 'user' ? 'self-end items-end' : 'self-start'}`}>
-            <div
-              className={`text-[13px] leading-relaxed px-3 py-2 rounded-lg whitespace-pre-wrap ${
-                msg.role === 'user'
-                  ? 'bg-[#1B1B1B] text-white'
-                  : 'bg-[#F7F5F2] text-[#1B1B1B]'
-              }`}
-            >
+            <div className={`text-[13px] leading-relaxed px-3 py-2 rounded-lg whitespace-pre-wrap ${
+              msg.role === 'user' ? 'bg-[#1B1B1B] text-white' : 'bg-[#F7F5F2] text-[#1B1B1B]'
+            }`}>
               {msg.content}
             </div>
             <span className="text-[10px] text-[#8E8E8E]">{now()}</span>
@@ -139,17 +138,15 @@ export function Chatbot({ initiatives }: ChatbotProps) {
         {isLoading && (
           <div className="flex gap-1.5 px-3 py-2 bg-[#F7F5F2] rounded-lg w-fit">
             {[0, 1, 2].map(i => (
-              <div
-                key={i}
-                className="w-1.5 h-1.5 rounded-full bg-[#8E8E8E]"
-                style={{ animation: `blink 1.2s ${i * 0.2}s infinite` }}
-              />
+              <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#8E8E8E]"
+                style={{ animation: `blink 1.2s ${i * 0.2}s infinite` }} />
             ))}
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input */}
       <div className="flex gap-2 px-3 py-2.5 border-t border-[#EAE7E2]">
         <input
           ref={inputRef}
@@ -157,7 +154,7 @@ export function Chatbot({ initiatives }: ChatbotProps) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && send(input)}
-          placeholder="Ask anything about Growth Pod…"
+          placeholder="Ask Archie anything about Growth Pod…"
           className="flex-1 text-[13px] px-2.5 py-1.5 border border-[#D4D0CA] rounded-md bg-white text-[#1B1B1B] placeholder-[#8E8E8E] focus:outline-none focus:border-[#8E8E8E]"
           disabled={isLoading}
         />
@@ -166,7 +163,7 @@ export function Chatbot({ initiatives }: ChatbotProps) {
           disabled={isLoading || !input.trim()}
           className="text-[12px] px-3 py-1.5 rounded-md bg-[#1B1B1B] text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#333] transition-colors"
         >
-          Send
+          Ask
         </button>
       </div>
     </div>

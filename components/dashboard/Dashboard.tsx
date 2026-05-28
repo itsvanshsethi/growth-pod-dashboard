@@ -181,7 +181,7 @@ export function Dashboard() {
           <p className="text-[11px] font-medium uppercase tracking-wider text-[#8E8E8E] mb-3">Tools</p>
           <div className="flex gap-2 flex-wrap mb-4">
             {[
-              { id: 'chat' as ToolPanel, icon: 'chat', label: 'Ask the dashboard' },
+              { id: 'chat' as ToolPanel, icon: 'chat', label: 'Ask Archie' },
               { id: 'feedback' as ToolPanel, icon: 'send', label: 'Send feedback to PM' },
               { id: 'digest' as ToolPanel, icon: 'mail', label: 'Preview weekly digest' },
             ].map(tool => (

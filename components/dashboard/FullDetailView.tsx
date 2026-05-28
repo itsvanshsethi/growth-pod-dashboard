@@ -310,7 +310,7 @@ export function FullDetailView({ initiative, onBack, onAsk, onFeedback }: FullDe
           className="flex items-center gap-2 text-[13px] px-4 py-2 border border-[#D4D0CA] rounded-md bg-white text-[#5C5C5C] hover:bg-[#F7F5F2] transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-          Ask about this
+          Ask Archie
         </button>
         <button
           onClick={onFeedback}
