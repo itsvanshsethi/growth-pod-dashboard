@@ -6,7 +6,7 @@ import { fetchInitiatives, fetchGoogleDocText } from '@/lib/googleAuth';
 import { buildArchieSystemPrompt } from '@/lib/archieContext';
 import { Initiative } from '@/lib/types';
 
-const ALLOWED_CHANNEL_NAMES = ['growth-pod', 'growth-internal', 'growth-product'];
+const ALLOWED_CHANNEL_NAMES = ['growth-pod', 'growth-internal', 'growth-product', 'archie-testing'];
 
 // ── Slack signature verification ──────────────────────────────────────────────
 
