@@ -91,8 +91,8 @@ export function Chatbot({ initiatives }: ArchieProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-[#EAE7E2]">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-[#1B1B1B] flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-[11px] font-semibold">A</span>
+          <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[#2D1B69]">
+            <img src="/archie.png" alt="Archie" className="w-full h-full object-cover" />
           </div>
           <div>
             <div className="text-[13px] font-medium text-[#1B1B1B]">Archie</div>
