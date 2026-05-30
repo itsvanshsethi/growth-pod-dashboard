@@ -54,10 +54,15 @@ async function getChannelName(channelId: string): Promise<string | null> {
   return json.channel?.name ?? null;
 }
 
-async function postMessage(channel: string, text: string, threadTs?: string) {
+async function postMessage(channel: string, text: string, threadTs?: string): Promise<string | null> {
   const payload: Record<string, unknown> = { channel, text, unfurl_links: false };
   if (threadTs) payload.thread_ts = threadTs;
-  return slackPost('chat.postMessage', payload);
+  const res = await slackPost('chat.postMessage', payload);
+  return res.ts ?? null;
+}
+
+async function updateMessage(channel: string, ts: string, text: string) {
+  return slackPost('chat.update', { channel, ts, text, unfurl_links: false });
 }
 
 // ── Core event processing ─────────────────────────────────────────────────────
@@ -97,15 +102,16 @@ async function processEvent(event: Record<string, unknown>) {
     }
   }
 
+  // Post a thinking indicator immediately so the user knows Archie is working
+  const thinkingTs = await postMessage(channelId, '_Archie is thinking…_', isDM ? undefined : threadTs);
+
   // Fetch live sheet data
   const { initiatives, error: sheetError } = await fetchInitiatives();
 
   if (sheetError && !initiatives.length) {
-    await postMessage(
-      channelId,
-      `Sorry, I couldn't load the Growth Pod sheet right now (${sheetError}). Try again in a moment.`,
-      isDM ? undefined : threadTs
-    );
+    const errMsg = `Sorry, I couldn't load the Growth Pod sheet right now (${sheetError}). Try again in a moment.`;
+    if (thinkingTs) await updateMessage(channelId, thinkingTs, errMsg);
+    else await postMessage(channelId, errMsg, isDM ? undefined : threadTs);
     return;
   }
 
@@ -128,8 +134,9 @@ async function processEvent(event: Record<string, unknown>) {
     reply = 'Something went wrong calling the AI. Please try again.';
   }
 
-  // Post reply
-  await postMessage(channelId, reply, isDM ? undefined : threadTs);
+  // Replace the thinking message with the real reply
+  if (thinkingTs) await updateMessage(channelId, thinkingTs, reply);
+  else await postMessage(channelId, reply, isDM ? undefined : threadTs);
 }
 
 // Find if the question mentions a specific initiative name
