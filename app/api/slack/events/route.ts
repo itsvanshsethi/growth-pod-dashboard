@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import crypto from 'crypto';
-import Anthropic from '@anthropic-ai/sdk';
 import { fetchInitiatives, fetchGoogleDocText } from '@/lib/googleAuth';
 import { buildArchieSystemPrompt } from '@/lib/archieContext';
+import { askAI } from '@/lib/aiClient';
 import { Initiative } from '@/lib/types';
 
 const ALLOWED_CHANNEL_NAMES = ['growth-pod', 'growth-internal', 'growth-product', 'archie-testing'];
@@ -64,10 +64,10 @@ async function postMessage(channel: string, text: string, threadTs?: string) {
 
 async function processEvent(event: Record<string, unknown>) {
   const botToken = process.env.SLACK_BOT_TOKEN;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const hasAI = process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY;
 
-  if (!botToken || !anthropicKey) {
-    console.error('Archie: missing SLACK_BOT_TOKEN or ANTHROPIC_API_KEY');
+  if (!botToken || !hasAI) {
+    console.error('Archie: missing SLACK_BOT_TOKEN or AI key (ANTHROPIC_API_KEY / GEMINI_API_KEY)');
     return;
   }
 
@@ -118,20 +118,12 @@ async function processEvent(event: Record<string, unknown>) {
 
   const systemPrompt = buildArchieSystemPrompt(initiatives, docContext);
 
-  // Call Anthropic
-  const client = new Anthropic();
   let reply = '';
-
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: question }],
-    });
-    reply = (response.content[0] as { text: string }).text || 'I could not generate a response.';
+    reply = await askAI(systemPrompt, question, 800);
+    if (!reply) reply = 'I could not generate a response.';
   } catch (err) {
-    console.error('Archie: Anthropic error', err);
+    console.error('Archie: AI error', err);
     reply = 'Something went wrong calling the AI. Please try again.';
   }
 

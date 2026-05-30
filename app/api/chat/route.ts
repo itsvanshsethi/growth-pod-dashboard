@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
 import { buildArchieSystemPrompt } from '@/lib/archieContext';
 import { fetchGoogleDocText } from '@/lib/googleAuth';
-
-const client = new Anthropic();
+import { streamAI } from '@/lib/aiClient';
 
 export async function POST(req: NextRequest) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 503 });
+  const hasAI = process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY;
+  if (!hasAI) {
+    return NextResponse.json({ error: 'No AI credentials configured' }, { status: 503 });
   }
 
   let body: {
-    messages: Anthropic.MessageParam[];
+    messages: { role: 'user' | 'assistant'; content: string }[];
     initiatives: Record<string, unknown>[];
     focusInitiativeId?: string;
   };
@@ -26,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No messages provided' }, { status: 400 });
   }
 
-  // Optionally fetch linked PRD doc for focused initiative
+  // Fetch linked PRD for focused initiative
   let docContext: string | undefined;
   if (focusInitiativeId) {
     const focused = initiatives?.find(i => i.id === focusInitiativeId);
@@ -39,34 +38,7 @@ export async function POST(req: NextRequest) {
   const systemPrompt = buildArchieSystemPrompt(initiatives as never, docContext);
 
   try {
-    const stream = await client.messages.stream({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: messages.map(m => ({
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : '',
-      })),
-    });
-
-    const readable = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        try {
-          for await (const chunk of stream) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`));
-            }
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch (e) {
-          controller.error(e);
-        } finally {
-          controller.close();
-        }
-      },
-    });
-
+    const readable = await streamAI(systemPrompt, messages);
     return new Response(readable, {
       headers: {
         'Content-Type': 'text/event-stream',
