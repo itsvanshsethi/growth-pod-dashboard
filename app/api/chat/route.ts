@@ -25,14 +25,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No messages provided' }, { status: 400 });
   }
 
-  // Fetch linked PRD for focused initiative
+  // Fetch linked PRD — use focusInitiativeId if provided, otherwise auto-detect from message
   let docContext: string | undefined;
-  if (focusInitiativeId) {
-    const focused = initiatives?.find(i => i.id === focusInitiativeId);
-    if (focused?.prdUrl && typeof focused.prdUrl === 'string') {
-      const text = await fetchGoogleDocText(focused.prdUrl);
-      if (text) docContext = text;
-    }
+  const lastUserMessage = [...messages].reverse().find(m => m.role === 'user')?.content ?? '';
+
+  const findMentioned = () => {
+    const q = lastUserMessage.toLowerCase();
+    return initiatives?.find(i => typeof i.title === 'string' && q.includes((i.title as string).toLowerCase()));
+  };
+
+  const targetInitiative = focusInitiativeId
+    ? initiatives?.find(i => i.id === focusInitiativeId)
+    : findMentioned();
+
+  if (targetInitiative?.prdUrl && typeof targetInitiative.prdUrl === 'string') {
+    const text = await fetchGoogleDocText(targetInitiative.prdUrl as string);
+    if (text) docContext = text;
   }
 
   const systemPrompt = buildArchieSystemPrompt(initiatives as never, docContext);
