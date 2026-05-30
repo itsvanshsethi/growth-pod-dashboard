@@ -86,10 +86,11 @@ async function processEvent(event: Record<string, unknown>) {
   // Channel restriction check (skip for DMs)
   if (!isDM) {
     const channelName = await getChannelName(channelId);
-    if (!channelName || !ALLOWED_CHANNEL_NAMES.includes(channelName)) {
+    // If we can't read the channel name (missing scope, private channel), allow through
+    if (channelName && !ALLOWED_CHANNEL_NAMES.includes(channelName)) {
       await postMessage(
         channelId,
-        `I'm only available in #growth-pod, #growth-internal, and #growth-product. Ask me there!`,
+        `I'm only available in #growth-pod, #growth-internal, #growth-product, and #archie-testing. Ask me there!`,
         eventTs
       );
       return;
