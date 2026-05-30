@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { Initiative, ViewMode, ToolPanel } from '@/lib/types';
 import { DashboardData } from '@/lib/types';
@@ -33,7 +34,7 @@ export function Dashboard() {
   const { data, error, isFetching } = useQuery<DashboardData>({
     queryKey: ['initiatives'],
     queryFn: fetchInitiatives,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 5,
     refetchInterval: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
     retry: 2,
@@ -69,9 +70,7 @@ export function Dashboard() {
   }
 
   const handleAskFromPanel = useCallback(() => {
-    if (selectedIni) {
-      setChatPrefill(selectedIni.title + ': ');
-    }
+    if (selectedIni) setChatPrefill(selectedIni.title + ': ');
     openTool('chat');
     setTimeout(() => {
       document.getElementById('tools-section')?.scrollIntoView({ behavior: 'smooth' });
@@ -107,7 +106,7 @@ export function Dashboard() {
   // Full detail view
   if (expandedId && expandedIni) {
     return (
-      <div className="min-h-screen bg-white px-6 max-w-5xl mx-auto">
+      <div className="min-h-screen bg-[#F7F5F2] px-6 max-w-5xl mx-auto">
         <FullDetailView
           initiative={expandedIni}
           onBack={closeExpanded}
@@ -119,7 +118,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-[#F7F5F2]">
       <div className="px-6 py-6 max-w-[1600px] mx-auto">
         <Header
           lastSynced={lastSynced}
@@ -128,22 +127,29 @@ export function Dashboard() {
           onViewChange={v => { setView(v); setSelectedId(null); }}
         />
 
-        {apiError && (
-          <div className="mb-4 px-3 py-2.5 bg-[#FAEEDA] border border-[#F5D6AA] rounded-lg text-[12px] text-[#633806] flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            {initiatives.length > 0
-              ? `Data may be stale — ${apiError}`
-              : `Could not load data — ${apiError}`}
-          </div>
-        )}
+        <AnimatePresence>
+          {apiError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-[12px] text-amber-800 flex items-center gap-2"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              {initiatives.length > 0
+                ? `Data may be stale — ${apiError}`
+                : `Could not load data — ${apiError}`}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {!apiError && initiatives.length === 0 && !isFetching && (
-          <div className="mb-4 px-3 py-2.5 bg-[#F7F5F2] border border-[#EAE7E2] rounded-lg text-[12px] text-[#5C5C5C]">
-            No initiative data found. Check that your Google Sheet has data in the expected columns (C, AN, AO…) and the API key is configured.
+          <div className="mb-4 px-4 py-3 bg-white border border-[#EAE7E2] rounded-xl text-[12px] text-[#8C8880]">
+            No initiative data found. Check that your Google Sheet has data in the expected columns and the API key is configured.
           </div>
         )}
 
@@ -165,20 +171,23 @@ export function Dashboard() {
             )}
           </div>
 
-          {selectedIni && view === 'kanban' && (
-            <SidePanel
-              initiative={selectedIni}
-              onClose={() => setSelectedId(null)}
-              onExpand={() => expandIni(selectedIni.id)}
-              onAsk={handleAskFromPanel}
-              onFeedback={handleFeedbackFromPanel}
-            />
-          )}
+          <AnimatePresence>
+            {selectedIni && view === 'kanban' && (
+              <SidePanel
+                key={selectedIni.id}
+                initiative={selectedIni}
+                onClose={() => setSelectedId(null)}
+                onExpand={() => expandIni(selectedIni.id)}
+                onAsk={handleAskFromPanel}
+                onFeedback={handleFeedbackFromPanel}
+              />
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Tools section */}
-        <div className="mt-8 pt-6 border-t border-[#EAE7E2]" id="tools-section">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-[#8E8E8E] mb-3">Tools</p>
+        <div className="mt-10 pt-6 border-t border-[#E8E4DF]" id="tools-section">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-[#A09A93] mb-3">Tools</p>
           <div className="flex gap-2 flex-wrap mb-4">
             {[
               { id: 'chat' as ToolPanel, icon: 'chat', label: 'Ask Archie' },
@@ -188,10 +197,10 @@ export function Dashboard() {
               <button
                 key={tool.id}
                 onClick={() => openTool(tool.id)}
-                className={`flex items-center gap-1.5 text-[13px] px-3.5 py-2 rounded-lg border transition-all ${
+                className={`flex items-center gap-2 text-[13px] font-medium px-4 py-2 rounded-xl border transition-all duration-150 ${
                   activeTool === tool.id
-                    ? 'bg-[#1B1B1B] text-white border-[#1B1B1B]'
-                    : 'bg-white text-[#5C5C5C] border-[#D4D0CA] hover:bg-[#F7F5F2]'
+                    ? 'bg-[#1B1B1B] text-white border-[#1B1B1B] shadow-sm'
+                    : 'bg-white text-[#5C5C5C] border-[#E8E4DF] hover:bg-[#F7F5F2] hover:border-[#D4D0CA] shadow-sm'
                 }`}
               >
                 <ToolIcon name={tool.icon} active={activeTool === tool.id} />
@@ -200,22 +209,31 @@ export function Dashboard() {
             ))}
           </div>
 
-          {activeTool === 'chat' && (
-            <Chatbot
-              initiatives={initiatives}
-              key={chatPrefill}
-            />
-          )}
-          {activeTool === 'feedback' && (
-            <FeedbackForm
-              initiatives={initiatives}
-              prefillInitiative={feedbackPrefill}
-              key={feedbackPrefill}
-            />
-          )}
-          {activeTool === 'digest' && (
-            <WeeklyDigest initiatives={initiatives} />
-          )}
+          <AnimatePresence mode="wait">
+            {activeTool && (
+              <motion.div
+                key={activeTool}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+              >
+                {activeTool === 'chat' && (
+                  <Chatbot initiatives={initiatives} key={chatPrefill} />
+                )}
+                {activeTool === 'feedback' && (
+                  <FeedbackForm
+                    initiatives={initiatives}
+                    prefillInitiative={feedbackPrefill}
+                    key={feedbackPrefill}
+                  />
+                )}
+                {activeTool === 'digest' && (
+                  <WeeklyDigest initiatives={initiatives} />
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
