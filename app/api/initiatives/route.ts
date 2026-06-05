@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchInitiatives } from '@/lib/googleAuth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const hasCredentials =
     process.env.GOOGLE_SHEETS_API_KEY ||
