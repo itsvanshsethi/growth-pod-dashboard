@@ -42,7 +42,6 @@ export async function GET() {
       : `${SHEETS_BASE}/${SHEET_ID}?fields=sheets.properties&key=${apiKey}`;
 
     const metaRes = await fetch(metaUrl, { headers });
-    const metaStatus = metaRes.status;
     const meta = await metaRes.json();
 
     // Fetch first 6 rows of columns C (feature name) and AN (status)
