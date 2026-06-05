@@ -22,9 +22,16 @@ export async function GET() {
     );
   }
 
-  return NextResponse.json({
-    initiatives,
-    lastSynced: new Date().toISOString(),
-    ...(error ? { error } : {}),
-  });
+  return NextResponse.json(
+    {
+      initiatives,
+      lastSynced: new Date().toISOString(),
+      ...(error ? { error } : {}),
+    },
+    {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+    }
+  );
 }
