@@ -47,8 +47,8 @@ export async function GET() {
     // Fetch first 6 rows of columns C (feature name) and AN (status)
     const sheetTitle = meta.sheets?.[0]?.properties?.title || 'Sheet1';
     const rangeUrl = auth.startsWith('Bearer ')
-      ? `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN6`)}`
-      : `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN6`)}?key=${apiKey}`;
+      ? `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN50`)}`
+      : `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN50`)}?key=${apiKey}`;
     const rangeRes = await fetch(rangeUrl, { headers });
     const rangeData = await rangeRes.json();
     const rows: string[][] = rangeData.values || [];
