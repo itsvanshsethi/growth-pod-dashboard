@@ -140,10 +140,10 @@ export function parseSheetRows(
   rows: string[][],
   changelogRows?: string[][]
 ): Initiative[] {
-  if (!rows || rows.length < 2) return [];
+  if (!rows || rows.length < 3) return [];
 
-  // Skip header row
-  const dataRows = rows.slice(1);
+  // Skip 2 header rows (sheet has frozenRowCount: 2)
+  const dataRows = rows.slice(2);
 
   // Map of feature name → manual changelog entries
   const manualChangelog: Record<string, ChangelogEntry[]> = {};
