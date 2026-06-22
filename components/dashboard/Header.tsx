@@ -20,7 +20,7 @@ export function Header({ lastSynced, isFetching, view, onViewChange }: HeaderPro
       <div>
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[#A09A93]">
-            Razorpay
+            POP
           </span>
           <span className="w-1 h-1 rounded-full bg-[#D4D0CA]" />
           <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-[#A09A93]">
