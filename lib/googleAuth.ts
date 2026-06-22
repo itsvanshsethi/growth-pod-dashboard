@@ -22,6 +22,7 @@ export async function getGoogleAuth(): Promise<string> {
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
       }),
+      cache: 'no-store',
     });
     const json = await res.json();
     if (json.access_token) return `Bearer ${json.access_token}`;
@@ -43,7 +44,7 @@ export function authUrl(base: string, auth: string): string {
 
 export async function fetchSheetRange(range: string, auth: string): Promise<string[][]> {
   const base = `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(range)}`;
-  const res = await fetch(authUrl(base, auth), { headers: authHeaders(auth) });
+  const res = await fetch(authUrl(base, auth), { headers: authHeaders(auth), cache: 'no-store' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Sheets API ${res.status}: ${text}`);
@@ -54,7 +55,7 @@ export async function fetchSheetRange(range: string, auth: string): Promise<stri
 
 export async function getFirstSheetName(auth: string): Promise<string> {
   const base = `${SHEETS_BASE}/${SHEET_ID}?fields=sheets.properties.title`;
-  const res = await fetch(authUrl(base, auth), { headers: authHeaders(auth) });
+  const res = await fetch(authUrl(base, auth), { headers: authHeaders(auth), cache: 'no-store' });
   if (!res.ok) return 'Sheet1';
   const json = await res.json();
   return json.sheets?.[0]?.properties?.title || 'Sheet1';
