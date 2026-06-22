@@ -1,11 +1,12 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { Initiative, ViewMode, ToolPanel } from '@/lib/types';
 import { DashboardData } from '@/lib/types';
 import { Header } from './Header';
 import { StatsBar } from './StatsBar';
+import { FilterBar, FilterState } from './FilterBar';
 import { KanbanBoard } from './KanbanBoard';
 import { FounderView } from './FounderView';
 import { SidePanel } from './SidePanel';
@@ -30,6 +31,7 @@ export function Dashboard() {
   const [activeTool, setActiveTool] = useState<ToolPanel>(null);
   const [feedbackPrefill, setFeedbackPrefill] = useState<string>('');
   const [chatPrefill, setChatPrefill] = useState<string>('');
+  const [filters, setFilters] = useState<FilterState>({ sprints: [], statuses: [] });
 
   const { data, error, isFetching } = useQuery<DashboardData>({
     queryKey: ['initiatives'],
@@ -43,6 +45,19 @@ export function Dashboard() {
   const initiatives: Initiative[] = data?.initiatives ?? [];
   const lastSynced = data?.lastSynced ?? '';
   const apiError = error ? (error as Error).message : data?.error ?? null;
+
+  const allSprints = useMemo(
+    () => [...new Set(initiatives.map(i => i.quarter).filter(Boolean))].sort(),
+    [initiatives]
+  );
+
+  const filteredInitiatives = useMemo(
+    () => initiatives.filter(i =>
+      (filters.sprints.length === 0 || filters.sprints.includes(i.quarter)) &&
+      (filters.statuses.length === 0 || filters.statuses.includes(i.status))
+    ),
+    [initiatives, filters]
+  );
 
   const selectedIni = initiatives.find(i => i.id === selectedId) ?? null;
   const expandedIni = initiatives.find(i => i.id === expandedId) ?? null;
@@ -155,17 +170,25 @@ export function Dashboard() {
 
         <StatsBar initiatives={initiatives} />
 
+        <FilterBar
+          allSprints={allSprints}
+          filters={filters}
+          onChange={f => { setFilters(f); setSelectedId(null); }}
+          totalCount={initiatives.length}
+          filteredCount={filteredInitiatives.length}
+        />
+
         <div className="flex gap-3 overflow-hidden">
           <div className="flex-1 overflow-x-auto min-w-0">
             {view === 'kanban' ? (
               <KanbanBoard
-                initiatives={initiatives}
+                initiatives={filteredInitiatives}
                 selectedId={selectedId}
                 onSelect={selectCard}
               />
             ) : (
               <FounderView
-                initiatives={initiatives}
+                initiatives={filteredInitiatives}
                 onSelect={id => expandIni(id)}
               />
             )}
