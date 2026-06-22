@@ -42,12 +42,12 @@ export function Dashboard() {
     retry: 2,
   });
 
-  const initiatives: Initiative[] = data?.initiatives ?? [];
+  const initiatives: Initiative[] = useMemo(() => data?.initiatives ?? [], [data]);
   const lastSynced = data?.lastSynced ?? '';
   const apiError = error ? (error as Error).message : data?.error ?? null;
 
   const allSprints = useMemo(
-    () => [...new Set(initiatives.map(i => i.quarter).filter(Boolean))].sort(),
+    () => Array.from(new Set(initiatives.map(i => i.quarter).filter(Boolean))).sort(),
     [initiatives]
   );
 
