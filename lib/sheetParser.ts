@@ -16,11 +16,9 @@ function normalizeStatus(raw: string): Status {
 }
 
 function normalizeConfidence(raw: string): Confidence {
-  const s = raw.toLowerCase().trim();
-  if (s.includes('on track')) return 'on track';
-  if (s.includes('at risk')) return 'at risk';
-  if (s.includes('off track')) return 'off track';
-  return 'on track';
+  const s = raw.trim();
+  if (!s) return 'On track';
+  return s;
 }
 
 function isTrackDone(status: string): boolean {

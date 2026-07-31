@@ -1,5 +1,5 @@
 export type Status = 'scoping' | 'planned' | 'in progress' | 'live' | 'paused';
-export type Confidence = 'on track' | 'at risk' | 'off track';
+export type Confidence = string;
 export type MetricKind = 'leading' | 'north_star' | 'lagging';
 export type ExperimentStatus = 'running' | 'winner' | 'planned';
 export type DependencyType = 'blocker' | 'dependency' | 'resolved';

@@ -12,7 +12,9 @@ export function statusStyle(status: Status): CSSProperties {
 }
 
 export function confidenceStyle(confidence: Confidence): CSSProperties {
-  const c = CONFIDENCE_BADGE[confidence] || CONFIDENCE_BADGE['on track'];
+  const key = confidence.toLowerCase();
+  const c = (CONFIDENCE_BADGE as Record<string, { bg: string; text: string }>)[key]
+    || { bg: '#F1EFE8', text: '#444441' };
   return { backgroundColor: c.bg, color: c.text };
 }
 
@@ -21,7 +23,7 @@ export function statusLabel(status: Status): string {
 }
 
 export function confidenceLabel(confidence: Confidence): string {
-  return CONFIDENCE_LABEL[confidence] || cap(confidence);
+  return (CONFIDENCE_LABEL as Record<string, string>)[confidence.toLowerCase()] || confidence;
 }
 
 export function formatNow(): string {
