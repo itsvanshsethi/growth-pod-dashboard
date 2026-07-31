@@ -47,17 +47,18 @@ export async function GET() {
     // Fetch first 6 rows of columns C (feature name) and AN (status)
     const sheetTitle = meta.sheets?.[0]?.properties?.title || 'Sheet1';
     const rangeUrl = auth.startsWith('Bearer ')
-      ? `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN50`)}`
-      : `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AN50`)}?key=${apiKey}`;
-    const rangeRes = await fetch(rangeUrl, { headers });
+      ? `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AO50`)}`
+      : `${SHEETS_BASE}/${SHEET_ID}/values/${encodeURIComponent(`${sheetTitle}!A1:AO50`)}?key=${apiKey}`;
+    const rangeRes = await fetch(rangeUrl, { headers, cache: 'no-store' });
     const rangeData = await rangeRes.json();
     const rows: string[][] = rangeData.values || [];
 
-    // Show col C (index 2 = feature name) and col AN (index 39 = status) for each row
+    // Show col C (feature name), col AN (status), col AO (confidence) for each row
     const sample = rows.map((row, i) => ({
       rowNum: i + 1,
       colC: row[2] || '(empty)',
       colAN: row[39] || '(empty)',
+      colAO: row[40] || '(empty)',
     }));
 
     return NextResponse.json({
