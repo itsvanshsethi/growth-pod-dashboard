@@ -565,6 +565,7 @@ export async function handleRescope(featureName: string, reason: string): Promis
   for (const old of ownerEntries) {
     const ctx: ActionContext = {
       featureName, track: old.track, ownerSlackId: old.ownerSlackId, ownerName: old.ownerName,
+      ownerMention: old.ownerSlackId.startsWith('U') ? `<@${old.ownerSlackId}>` : old.ownerName,
       round: newRound, channelId: old.channelId, parentThreadTs: old.parentThreadTs,
       threadTs: old.ownerThreadTs, msgTs: '', pmSlackId: coordinator.pmSlackId,
       pmDmChannel: coordinator.pmDmChannel, prdUrl: meta.prdUrl,
@@ -601,12 +602,13 @@ export async function handleResolve(featureName: string, ownerName: string): Pro
 
   const ctx: ActionContext = {
     featureName, track: entry.track, ownerSlackId: entry.ownerSlackId, ownerName: entry.ownerName,
+    ownerMention: entry.ownerSlackId.startsWith('U') ? `<@${entry.ownerSlackId}>` : entry.ownerName,
     round: entry.round, channelId: entry.channelId, parentThreadTs: entry.parentThreadTs,
     threadTs: entry.ownerThreadTs, msgTs: '', pmSlackId: entry.pmSlackId,
     pmDmChannel: entry.pmDmChannel, prdUrl: '',
   };
   const newMsgTs = await postMessage(entry.channelId,
-    `The PM has resolved the concern. <@${entry.ownerSlackId}> please proceed with your sign-off below.`,
+    `The PM has resolved the concern. ${ctx.ownerMention} please proceed with your sign-off below.`,
     { blocks: scopeReviewBlocks({ ...ctx, msgTs: '' }), threadTs: entry.ownerThreadTs },
   );
   if (newMsgTs) {
@@ -659,6 +661,7 @@ export async function checkAndSendReminders(): Promise<void> {
         const ctx: ActionContext = {
           featureName: entry.featureName, track: entry.track,
           ownerSlackId: entry.ownerSlackId, ownerName: entry.ownerName,
+          ownerMention: entry.ownerSlackId.startsWith('U') ? `<@${entry.ownerSlackId}>` : entry.ownerName,
           round: entry.round, channelId: entry.channelId,
           parentThreadTs: entry.parentThreadTs, threadTs: entry.ownerThreadTs, msgTs: '',
           pmSlackId: entry.pmSlackId, pmDmChannel: entry.pmDmChannel, prdUrl: '',
