@@ -14,8 +14,9 @@ function pemToDer(pem: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-function b64url(buf: ArrayBuffer): string {
-  return btoa(Array.from(new Uint8Array(buf), b => String.fromCharCode(b)).join(''))
+function b64url(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  return btoa(Array.from(bytes, b => String.fromCharCode(b)).join(''))
     .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
 
