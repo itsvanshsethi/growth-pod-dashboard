@@ -614,7 +614,22 @@ export async function handleResolve(featureName: string, ownerName: string): Pro
   const entry = slackIdMatch
     ? entries.find(e => e.ownerSlackId === slackIdMatch[1] && e.status === 'Concern Raised')
     : entries.find(e => e.ownerName.toLowerCase() === ownerName.toLowerCase() && e.status === 'Concern Raised');
-  if (!entry) return;
+  if (!entry) {
+    // Give feedback — find any entry for this feature to give a better error
+    const allEntries = entries.filter(e => e.track !== 'COORDINATOR');
+    const concerned = entries.filter(e => e.status === 'Concern Raised');
+    const dmCh = concerned[0]?.pmDmChannel || allEntries[0]?.pmDmChannel;
+    if (dmCh) {
+      if (allEntries.length === 0) {
+        await postMessage(dmCh, `No active sign-off found for *${featureName}*.`);
+      } else if (concerned.length === 0) {
+        await postMessage(dmCh, `No concerns raised for *${featureName}* — nothing to resolve.`);
+      } else {
+        await postMessage(dmCh, `Couldn't find a concern for *${featureName}* matching owner \`${ownerName}\`. Concerns are raised by: ${concerned.map(e => e.ownerName).join(', ')}`);
+      }
+    }
+    return;
+  }
 
   entry.status = 'Scope Review';
   entry.concerns = '';
