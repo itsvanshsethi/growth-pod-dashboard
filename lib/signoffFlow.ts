@@ -37,7 +37,7 @@ function prdReviewBlocks(ctx: ActionContext): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${ctx.featureName} — Sign-off request*\n<@${ctx.ownerSlackId}>, you're the *${ctx.track}* owner for this feature.\n\n*Step 1 of 2 — PRD Review*\nHave you reviewed the PRD?${prdLine}`,
+        text: `*${ctx.featureName} — Sign-off request*\n<@${ctx.ownerSlackId}>, you're the *${ctx.track}* owner.\n\n*Step 1 of 2 — PRD Review*\nHave you reviewed the PRD?${prdLine}`,
       },
     },
     {
@@ -286,7 +286,8 @@ async function postOwnerThreads(
     };
 
     // Post into the parent thread — this reply's ts becomes the owner's sub-thread ts
-    const ownerTs = await postMessage(channelId, `Sign-off request for ${ownerName} (${track})`, {
+    const threadLabel = `Sign-off request — <@${ownerSlackId}> (${track})`;
+    const ownerTs = await postMessage(channelId, threadLabel, {
       blocks: prdReviewBlocks({ ...ctx, threadTs: parentThreadTs, msgTs: '' }),
       threadTs: parentThreadTs,
     });
@@ -296,7 +297,7 @@ async function postOwnerThreads(
     ctx.msgTs = ownerTs;
 
     // Update button values with correct threadTs/msgTs by editing the message
-    await updateMessage(channelId, ownerTs, `Sign-off request for ${ownerName} (${track})`,
+    await updateMessage(channelId, ownerTs, threadLabel,
       prdReviewBlocks({ ...ctx, msgTs: ownerTs }),
     );
 
@@ -326,13 +327,13 @@ export async function handleButtonAction(
   try { ctx = JSON.parse(rawCtx); } catch { return; }
 
   if (actionId === 'prd_reviewed_yes') {
-    await updateMessage(ctx.channelId, ctx.msgTs, `PRD reviewed ✓`, scopeReviewBlocks({ ...ctx, msgTs: ctx.msgTs }));
+    await updateMessage(ctx.channelId, ctx.msgTs, `<@${ctx.ownerSlackId}> (${ctx.track}) — PRD reviewed ✓`, scopeReviewBlocks({ ...ctx, msgTs: ctx.msgTs }));
     const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
     if (entry) { entry.status = 'Scope Review'; await saveSignoffEntry(entry); }
 
   } else if (actionId === 'prd_reviewed_wait') {
     await updateMessage(ctx.channelId, ctx.msgTs,
-      `No problem — I'll check back in 24 hours. <@${ctx.ownerSlackId}>`,
+      `<@${ctx.ownerSlackId}> (${ctx.track}) — No problem, I'll check back in 24 hours.`,
     );
     const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
     if (entry) { entry.status = 'PRD Wait'; await saveSignoffEntry(entry); }
@@ -451,7 +452,8 @@ export async function handleModalSubmit(
       await saveSignoffEntry(entry);
     }
 
-    await postMessage(ctx.channelId, `Logged — *${manDays}* man-days, delivery by *${date}*. ✓`, { threadTs: ctx.threadTs });
+    // Replace the scope sign-off buttons with a static completion state
+    await updateMessage(ctx.channelId, ctx.msgTs, `<@${ctx.ownerSlackId}> (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
     await checkCompletion(ctx.featureName, ctx.round, ctx.channelId, ctx.parentThreadTs, ctx.pmSlackId, ctx.pmDmChannel);
 
   } else if (callbackId === 'signoff_concern_modal') {
@@ -464,9 +466,9 @@ export async function handleModalSubmit(
       await saveSignoffEntry(entry);
     }
 
-    await postMessage(ctx.channelId,
-      `Concern flagged to the PM. Your sign-off is paused until this is resolved. The thread will remain open — you'll complete sign-off here once it's sorted.`,
-      { threadTs: ctx.threadTs },
+    // Replace the scope sign-off buttons with a static paused state
+    await updateMessage(ctx.channelId, ctx.msgTs,
+      `<@${ctx.ownerSlackId}> (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.\n_"${concernText}"_\nThe PM has been notified — you'll complete sign-off here once it's sorted.`,
     );
 
     await updateFeatureStatus(ctx.featureName, 'Concern Raised');
