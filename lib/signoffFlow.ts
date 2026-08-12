@@ -3,10 +3,10 @@ import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus } from './googl
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
   getEntriesForFeature, findByPMThread, findOwnerEntry, getCurrentRound,
-  hasActiveSignoff, getManagerHandle, initSignoffTabs,
+  hasActiveSignoff, initSignoffTabs,
 } from './signoffSheet';
 import {
-  postMessage, updateMessage, openModal, getDMChannel, resolveUserIdByName, slackPost,
+  postMessage, updateMessage, openModal, getDMChannel, resolveUserIdByName,
 } from './slackClient';
 
 const SIGNOFF_CHANNEL = () => process.env.SIGNOFF_CHANNEL ?? '';
