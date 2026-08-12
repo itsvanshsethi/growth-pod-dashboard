@@ -11,10 +11,5 @@
       "maxDuration": 60
     }
   },
-  "crons": [
-    {
-      "path": "/api/slack/poll",
-      "schedule": "*/30 * * * *"
-    }
-  ]
+  "crons": []
 }
