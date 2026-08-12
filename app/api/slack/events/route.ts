@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
-import crypto from 'crypto';
+import { verifySlackRequest, postMessage, updateMessage } from '@/lib/slackClient';
+import { handlePMConfirmation } from '@/lib/signoffFlow';
 import { fetchInitiatives, fetchGoogleDocText } from '@/lib/googleAuth';
 import { buildArchieSystemPrompt } from '@/lib/archieContext';
 import { askAI } from '@/lib/aiClient';
@@ -8,114 +9,56 @@ import { Initiative } from '@/lib/types';
 
 const ALLOWED_CHANNEL_NAMES = ['growth-pod', 'growth-internal', 'growth-product', 'archie-testing'];
 
-// ── Slack signature verification ──────────────────────────────────────────────
-
-function verifySlackSignature(body: string, timestamp: string, signature: string): boolean {
-  const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  if (!signingSecret) return false;
-
-  // Reject requests older than 5 minutes (replay attack protection)
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp)) > 300) return false;
-
-  const baseString = `v0:${timestamp}:${body}`;
-  const hmac = crypto.createHmac('sha256', signingSecret);
-  hmac.update(baseString);
-  const computed = `v0=${hmac.digest('hex')}`;
-
-  try {
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
-  } catch {
-    return false;
-  }
-}
-
-// ── Slack API helpers ──────────────────────────────────────────────────────────
-
-async function slackPost(endpoint: string, payload: Record<string, unknown>) {
-  const token = process.env.SLACK_BOT_TOKEN;
-  const res = await fetch(`https://slack.com/api/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  return res.json();
-}
-
 async function getChannelName(channelId: string): Promise<string | null> {
   const token = process.env.SLACK_BOT_TOKEN;
   const res = await fetch(`https://slack.com/api/conversations.info?channel=${channelId}`, {
     headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
   });
-  const json = await res.json();
+  const json = await res.json() as { channel?: { name: string } };
   return json.channel?.name ?? null;
 }
-
-async function postMessage(channel: string, text: string, threadTs?: string): Promise<string | null> {
-  const payload: Record<string, unknown> = { channel, text, unfurl_links: false };
-  if (threadTs) payload.thread_ts = threadTs;
-  const res = await slackPost('chat.postMessage', payload);
-  return res.ts ?? null;
-}
-
-async function updateMessage(channel: string, ts: string, text: string) {
-  return slackPost('chat.update', { channel, ts, text, unfurl_links: false });
-}
-
-// ── Core event processing ─────────────────────────────────────────────────────
 
 async function processEvent(event: Record<string, unknown>) {
   const botToken = process.env.SLACK_BOT_TOKEN;
   const hasAI = process.env.ANTHROPIC_API_KEY || process.env.GEMINI_API_KEY;
-
   if (!botToken || !hasAI) {
-    console.error('Archie: missing SLACK_BOT_TOKEN or AI key (ANTHROPIC_API_KEY / GEMINI_API_KEY)');
+    console.error('Archie: missing SLACK_BOT_TOKEN or AI key');
     return;
   }
 
   const channelId = event.channel as string;
-  const channelType = event.channel_type as string; // 'im' for DMs
+  const channelType = event.channel_type as string;
   const isDM = channelType === 'im';
   const threadTs = (event.thread_ts || event.ts) as string;
   const eventTs = event.ts as string;
 
-  // Strip bot mention from text (e.g. "<@U123456> what's blocking X?" → "what's blocking X?")
   const rawText = (event.text as string) || '';
   const question = rawText.replace(/<@[A-Z0-9]+>/g, '').trim();
-
   if (!question) return;
 
-  // Channel restriction check (skip for DMs)
   if (!isDM) {
     const channelName = await getChannelName(channelId);
-    // If we can't read the channel name (missing scope, private channel), allow through
     if (channelName && !ALLOWED_CHANNEL_NAMES.includes(channelName)) {
       await postMessage(
         channelId,
         `I'm only available in #growth-pod, #growth-internal, #growth-product, and #archie-testing. Ask me there!`,
-        eventTs
+        { threadTs: eventTs },
       );
       return;
     }
   }
 
-  // Post a thinking indicator immediately so the user knows Archie is working
-  const thinkingTs = await postMessage(channelId, '_Archie is thinking…_', isDM ? undefined : threadTs);
+  const thinkingTs = await postMessage(channelId, '_Archie is thinking…_', isDM ? {} : { threadTs });
 
-  // Fetch live sheet data
   const { initiatives, error: sheetError } = await fetchInitiatives();
-
   if (sheetError && !initiatives.length) {
     const errMsg = `Sorry, I couldn't load the Growth Pod sheet right now (${sheetError}). Try again in a moment.`;
     if (thinkingTs) await updateMessage(channelId, thinkingTs, errMsg);
-    else await postMessage(channelId, errMsg, isDM ? undefined : threadTs);
+    else await postMessage(channelId, errMsg, isDM ? {} : { threadTs });
     return;
   }
 
-  // Check if question is about a specific initiative and fetch its PRD
   let docContext: string | undefined;
   const matchedIni = findMentionedInitiative(question, initiatives);
   if (matchedIni?.prdUrl) {
@@ -124,7 +67,6 @@ async function processEvent(event: Record<string, unknown>) {
   }
 
   const systemPrompt = buildArchieSystemPrompt(initiatives, docContext);
-
   let reply = '';
   try {
     reply = await askAI(systemPrompt, question, 800);
@@ -134,26 +76,21 @@ async function processEvent(event: Record<string, unknown>) {
     reply = 'Something went wrong calling the AI. Please try again.';
   }
 
-  // Replace the thinking message with the real reply
   if (thinkingTs) await updateMessage(channelId, thinkingTs, reply);
-  else await postMessage(channelId, reply, isDM ? undefined : threadTs);
+  else await postMessage(channelId, reply, isDM ? {} : { threadTs });
 }
 
-// Find if the question mentions a specific initiative name
 function findMentionedInitiative(question: string, initiatives: Initiative[]): Initiative | null {
   const q = question.toLowerCase();
   return initiatives.find(i => q.includes(i.title.toLowerCase())) ?? null;
 }
 
-// ── Route handler ─────────────────────────────────────────────────────────────
-
 export async function POST(req: NextRequest) {
   const body = await req.text();
-  const timestamp = req.headers.get('x-slack-request-timestamp') || '';
-  const signature = req.headers.get('x-slack-signature') || '';
+  const timestamp = req.headers.get('x-slack-request-timestamp') ?? '';
+  const signature = req.headers.get('x-slack-signature') ?? '';
 
-  // Verify signature
-  if (!verifySlackSignature(body, timestamp, signature)) {
+  if (!verifySlackRequest(body, timestamp, signature)) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
@@ -164,7 +101,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Handle Slack URL verification challenge (one-time setup)
   if (payload.type === 'url_verification') {
     return NextResponse.json({ challenge: payload.challenge });
   }
@@ -175,19 +111,21 @@ export async function POST(req: NextRequest) {
   const eventType = event.type as string;
   const subtype = event.subtype as string | undefined;
 
-  // Only handle app_mention (channel) and direct messages (im)
   const isAppMention = eventType === 'app_mention';
-  const isDM = eventType === 'message' && event.channel_type === 'im' && !subtype; // ignore bot messages, edits etc
+  const isDM = eventType === 'message' && event.channel_type === 'im' && !subtype;
 
-  if (!isAppMention && !isDM) {
+  if (!isAppMention && !isDM) return new Response('', { status: 200 });
+  if (event.bot_id) return new Response('', { status: 200 });
+
+  // Check if this is a PM replying to a sign-off confirmation thread in a DM
+  if (isDM && event.thread_ts && event.thread_ts !== event.ts) {
+    const dmChannel = event.channel as string;
+    const threadTs = event.thread_ts as string;
+    const text = (event.text as string) ?? '';
+    waitUntil(handlePMConfirmation(dmChannel, threadTs, text));
     return new Response('', { status: 200 });
   }
 
-  // Ignore messages from bots (prevent loops)
-  if (event.bot_id) return new Response('', { status: 200 });
-
-  // Process asynchronously — return 200 to Slack immediately
   waitUntil(processEvent(event));
-
   return new Response('', { status: 200 });
 }

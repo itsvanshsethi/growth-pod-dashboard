@@ -6,6 +6,15 @@
   "functions": {
     "app/api/**/*.ts": {
       "maxDuration": 30
+    },
+    "app/api/slack/poll/route.ts": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/slack/poll",
+      "schedule": "*/30 * * * *"
+    }
+  ]
 }

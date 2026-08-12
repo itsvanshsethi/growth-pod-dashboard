@@ -1,7 +1,7 @@
 // Shared Google auth + sheet fetching — used by both the initiatives API route and the Slack bot
 
 import { parseSheetRows } from './sheetParser';
-import { SHEET_ID } from './constants';
+import { SHEET_ID, COL } from './constants';
 import { Initiative } from './types';
 
 const SHEETS_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
@@ -82,6 +82,137 @@ export async function fetchInitiatives(): Promise<{ initiatives: Initiative[]; e
     return { initiatives: [], error: message };
   }
 }
+
+// ── Google Sheets write helpers ────────────────────────────────────────────────
+
+function toColLetter(zeroIndex: number): string {
+  let n = zeroIndex + 1;
+  let result = '';
+  while (n > 0) {
+    n--;
+    result = String.fromCharCode(65 + (n % 26)) + result;
+    n = Math.floor(n / 26);
+  }
+  return result;
+}
+
+async function sheetsWrite(
+  path: string,
+  method: 'POST' | 'PUT',
+  body: Record<string, unknown>,
+  auth: string
+): Promise<void> {
+  const res = await fetch(authUrl(path, auth), {
+    method,
+    headers: { ...authHeaders(auth), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Sheets write ${res.status}: ${text.slice(0, 300)}`);
+  }
+}
+
+export async function appendToSheet(tabName: string, values: string[]): Promise<void> {
+  const auth = await getGoogleAuth();
+  const range = encodeURIComponent(`${tabName}!A:A`);
+  const url = `${SHEETS_BASE}/${SHEET_ID}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  await sheetsWrite(url, 'POST', { values: [values] }, auth);
+}
+
+export async function updateSheetRow(tabName: string, rowIndex: number, values: string[]): Promise<void> {
+  const auth = await getGoogleAuth();
+  const lastCol = toColLetter(values.length - 1);
+  const range = encodeURIComponent(`${tabName}!A${rowIndex}:${lastCol}${rowIndex}`);
+  const url = `${SHEETS_BASE}/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+  await sheetsWrite(url, 'PUT', { values: [values] }, auth);
+}
+
+export async function updateCellInSheet(tabName: string, rowIndex: number, colIndex: number, value: string): Promise<void> {
+  const auth = await getGoogleAuth();
+  const col = toColLetter(colIndex);
+  const range = encodeURIComponent(`${tabName}!${col}${rowIndex}`);
+  const url = `${SHEETS_BASE}/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+  await sheetsWrite(url, 'PUT', { values: [[value]] }, auth);
+}
+
+export async function ensureSheetTab(tabName: string, headers: string[]): Promise<void> {
+  const auth = await getGoogleAuth();
+  const metaUrl = authUrl(`${SHEETS_BASE}/${SHEET_ID}?fields=sheets.properties.title`, auth);
+  const metaRes = await fetch(metaUrl, { headers: authHeaders(auth), cache: 'no-store' });
+  const meta = await metaRes.json() as { sheets?: Array<{ properties: { title: string } }> };
+  const existing = (meta.sheets ?? []).map(s => s.properties.title);
+  if (existing.includes(tabName)) return;
+
+  const batchUrl = `${SHEETS_BASE}/${SHEET_ID}:batchUpdate`;
+  try {
+    await sheetsWrite(batchUrl, 'POST', { requests: [{ addSheet: { properties: { title: tabName } } }] }, auth);
+  } catch (e) {
+    if (!String(e).includes('already exists')) throw e;
+  }
+  await appendToSheet(tabName, headers);
+}
+
+export async function updateFeatureStatus(featureName: string, newStatus: string): Promise<boolean> {
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:AN`, auth);
+  for (let i = 2; i < rows.length; i++) {
+    const title = (rows[i][COL.FEATURE] ?? '').trim();
+    if (title.toLowerCase() === featureName.toLowerCase()) {
+      const sheetRow = i + 1;
+      const range = encodeURIComponent(`${firstSheet}!AN${sheetRow}`);
+      const url = `${SHEETS_BASE}/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
+      await sheetsWrite(url, 'PUT', { values: [[newStatus]] }, auth);
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function getFeatureRow(featureName: string): Promise<{
+  designOwner: string; beOwner: string; feOwner: string; qaOwner: string;
+  prdUrl: string; featureStatus: string; row: string[]; sheetRowIndex: number;
+} | null> {
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:AU`, auth);
+  for (let i = 2; i < rows.length; i++) {
+    const row = rows[i];
+    const title = (row[COL.FEATURE] ?? '').trim();
+    if (title.toLowerCase() === featureName.toLowerCase()) {
+      const clean = (idx: number) => (row[idx] ?? '').trim().replace(/^(NA|N\/A|-+)$/i, '');
+      return {
+        designOwner: clean(COL.DESIGN_OWNER),
+        beOwner: clean(COL.BE_OWNER),
+        feOwner: clean(COL.FE_OWNER),
+        qaOwner: clean(COL.QA_OWNER),
+        prdUrl: clean(COL.PRD_URL),
+        featureStatus: clean(COL.FEATURE_STATUS),
+        row,
+        sheetRowIndex: i + 1,
+      };
+    }
+  }
+  return null;
+}
+
+export async function getFeaturesByStatus(statuses: string[]): Promise<string[]> {
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:AN`, auth);
+  const lower = statuses.map(s => s.toLowerCase());
+  const result: string[] = [];
+  for (const row of rows.slice(2)) {
+    const title = (row[COL.FEATURE] ?? '').trim();
+    const status = (row[COL.FEATURE_STATUS] ?? '').trim().toLowerCase();
+    if (title && lower.includes(status)) result.push(title);
+  }
+  return result;
+}
+
+// ── Google Drive / Docs ────────────────────────────────────────────────────────
 
 export async function fetchGoogleDocText(docUrl: string): Promise<string | null> {
   try {
