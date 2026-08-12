@@ -18,7 +18,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const text = (params.get('text') ?? '').trim();
   const userId = params.get('user_id') ?? '';
   const channelId = params.get('channel_id') ?? '';
-  const _triggerId = params.get('trigger_id') ?? '';
+
 
   // Parse subcommand: first word after /archie
   const parts = text.split(/\s+/);
