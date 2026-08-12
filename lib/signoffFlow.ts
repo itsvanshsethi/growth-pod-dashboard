@@ -569,9 +569,19 @@ export async function handleRescope(featureName: string, reason: string): Promis
 
   const ownerEntries = entries.filter(e => e.track !== 'COORDINATOR' && e.round === oldRound);
   for (const old of ownerEntries) {
+    // Re-resolve owner ID from Escalation Matrix in case it was added/updated since last round
+    const mappings = await getOwnerMappings(old.ownerName);
+    let resolvedId: string | null = null;
+    if (mappings.slackHandle) {
+      const handle = mappings.slackHandle.trim();
+      resolvedId = /^U[A-Z0-9]+$/i.test(handle) ? handle : await resolveUserIdByName(handle.replace('@', ''));
+    }
+    if (!resolvedId && old.ownerSlackId.startsWith('U')) resolvedId = old.ownerSlackId;
+    const ownerSlackId = resolvedId ?? old.ownerName;
+    const ownerMention = resolvedId ? `<@${resolvedId}>` : old.ownerName;
     const ctx: ActionContext = {
-      featureName, track: old.track, ownerSlackId: old.ownerSlackId, ownerName: old.ownerName,
-      ownerMention: old.ownerSlackId.startsWith('U') ? `<@${old.ownerSlackId}>` : old.ownerName,
+      featureName, track: old.track, ownerSlackId, ownerName: old.ownerName,
+      ownerMention,
       round: newRound, channelId: old.channelId, parentThreadTs: old.parentThreadTs,
       threadTs: old.ownerThreadTs, msgTs: '', pmSlackId: coordinator.pmSlackId,
       pmDmChannel: coordinator.pmDmChannel, prdUrl: meta.prdUrl,
