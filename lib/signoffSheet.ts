@@ -11,7 +11,7 @@ const SIGNOFFS_HEADERS = [
   'Reminder Count', 'Awaiting Input', 'Metadata',
 ];
 
-const ESCALATION_HEADERS = ['Owner Name', 'Manager Slack Handle'];
+const ESCALATION_HEADERS = ['Owner Name', 'Slack Handle', 'Manager Slack Handle'];
 
 export const SCOL = {
   FEATURE_NAME:     0,
@@ -164,14 +164,18 @@ export async function findOwnerEntry(featureName: string, ownerSlackId: string, 
   ) ?? null;
 }
 
-export async function getManagerHandle(ownerName: string): Promise<string | null> {
+// Returns { slackHandle, managerHandle } from Escalation Matrix for a given owner name
+export async function getOwnerMappings(ownerName: string): Promise<{ slackHandle: string | null; managerHandle: string | null }> {
   try {
     const auth = await getGoogleAuth();
-    const rows = await fetchSheetRange(`${ESCALATION_TAB}!A:B`, auth);
-    const found = rows.slice(1).find(row => (row[0] ?? '').toLowerCase() === ownerName.toLowerCase());
-    return found?.[1]?.trim() || null;
+    const rows = await fetchSheetRange(`${ESCALATION_TAB}!A:C`, auth);
+    const found = rows.slice(1).find(row => (row[0] ?? '').toLowerCase().trim() === ownerName.toLowerCase().trim());
+    return {
+      slackHandle: found?.[1]?.trim() || null,
+      managerHandle: found?.[2]?.trim() || null,
+    };
   } catch {
-    return null;
+    return { slackHandle: null, managerHandle: null };
   }
 }
 
@@ -190,16 +194,15 @@ export async function hasActiveSignoff(featureName: string): Promise<boolean> {
   );
 }
 
-// Reads the Escalation Matrix tab for manager lookups
-// Tab must exist and follow the schema: Owner Name | Manager Slack Handle
+// Reads the Escalation Matrix tab — schema: Owner Name | Slack Handle | Manager Slack Handle
 export async function readEscalationMatrix(): Promise<Record<string, string>> {
   try {
     const auth = await getGoogleAuth();
-    const rows = await fetchSheetRange(`${ESCALATION_TAB}!A:B`, auth);
+    const rows = await fetchSheetRange(`${ESCALATION_TAB}!A:C`, auth);
     const result: Record<string, string> = {};
     for (const row of rows.slice(1)) {
       const owner = (row[0] ?? '').trim();
-      const manager = (row[1] ?? '').trim();
+      const manager = (row[2] ?? '').trim();
       if (owner && manager) result[owner.toLowerCase()] = manager;
     }
     return result;

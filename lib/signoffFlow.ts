@@ -3,7 +3,7 @@ import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus } from './googl
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
   getEntriesForFeature, findByPMThread, findOwnerEntry, getCurrentRound,
-  hasActiveSignoff, initSignoffTabs,
+  hasActiveSignoff, initSignoffTabs, getOwnerMappings,
 } from './signoffSheet';
 import {
   postMessage, updateMessage, openModal, getDMChannel, resolveUserIdByName,
@@ -277,7 +277,14 @@ async function postOwnerThreads(
   const pmDmChannel = await getDMChannel(pmSlackId);
 
   for (const { track, ownerName } of tracks) {
-    const resolvedId = await resolveUserIdByName(ownerName);
+    // 1. Check Escalation Matrix for explicit Slack handle mapping
+    const mappings = await getOwnerMappings(ownerName);
+    let resolvedId: string | null = null;
+    if (mappings.slackHandle) {
+      resolvedId = await resolveUserIdByName(mappings.slackHandle.replace('@', ''));
+    }
+    // 2. Fall back to fuzzy name match
+    if (!resolvedId) resolvedId = await resolveUserIdByName(ownerName);
     const ownerSlackId = resolvedId ?? ownerName;
     const ownerMention = resolvedId ? `<@${resolvedId}>` : ownerName;
 
