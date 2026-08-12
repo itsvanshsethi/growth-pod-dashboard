@@ -138,11 +138,20 @@ export async function getEntriesForFeature(featureName: string, round?: string):
 
 export async function findByPMThread(pmDmChannel: string, pmDmThreadTs: string): Promise<SignoffEntry | null> {
   const all = await getAllSignoffEntries();
-  return all.find(e =>
-    e.track === 'COORDINATOR' &&
-    e.pmDmChannel === pmDmChannel &&
-    e.pmDmThreadTs === pmDmThreadTs
-  ) ?? null;
+  // First try exact thread match, then fall back to any pending coordinator in this DM channel
+  return (
+    all.find(e =>
+      e.track === 'COORDINATOR' &&
+      e.pmDmChannel === pmDmChannel &&
+      e.pmDmThreadTs === pmDmThreadTs
+    ) ??
+    all.find(e =>
+      e.track === 'COORDINATOR' &&
+      e.pmDmChannel === pmDmChannel &&
+      e.status === 'Awaiting PM Confirmation'
+    ) ??
+    null
+  );
 }
 
 export async function findOwnerEntry(featureName: string, ownerSlackId: string, round: string): Promise<SignoffEntry | null> {

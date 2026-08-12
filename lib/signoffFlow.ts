@@ -192,13 +192,13 @@ export async function handlePMConfirmation(
   pmDmChannel: string,
   pmDmThreadTs: string,
   replyText: string,
-): Promise<void> {
+): Promise<boolean> {
   const coordinator = await findByPMThread(pmDmChannel, pmDmThreadTs);
-  if (!coordinator) return; // not a sign-off confirmation thread
+  if (!coordinator) return false; // not a sign-off confirmation thread
 
   if (coordinator.status === 'Confirmed') {
     await postMessage(pmDmChannel, '_Already confirmed — sign-off is underway._', { threadTs: pmDmThreadTs });
-    return;
+    return true;
   }
 
   let parsed: { swaps: Array<{ track: string; newOwner: string }>; additions: Array<{ track: string; ownerName: string }>; updateSheet: boolean } = {
@@ -243,13 +243,13 @@ If the message is just a confirmation (ok / confirmed / proceed / yes / go ahead
 
   // Post the sign-off thread
   const channel = coordinator.channelId || SIGNOFF_CHANNEL();
-  if (!channel) { console.error('[Signoff] No SIGNOFF_CHANNEL'); return; }
+  if (!channel) { console.error('[Signoff] No SIGNOFF_CHANNEL'); return true; }
 
   const parentTs = await postMessage(
     channel,
     `📋 *Sign-off initiated: ${coordinator.featureName}*\nRequesting sign-off from ${meta.tracks.map(t => t.ownerName).join(', ')}\nEach owner has a dedicated thread below.`,
   );
-  if (!parentTs) return;
+  if (!parentTs) return true;
 
   // Update coordinator with parentThreadTs
   coordinator.parentThreadTs = parentTs;
@@ -259,6 +259,7 @@ If the message is just a confirmation (ok / confirmed / proceed / yes / go ahead
     coordinator.featureName, meta.tracks, coordinator.round,
     channel, parentTs, coordinator.pmSlackId, meta.prdUrl,
   );
+  return true;
 }
 
 // ── Post per-owner threads ─────────────────────────────────────────────────────
