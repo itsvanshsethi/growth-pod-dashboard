@@ -609,7 +609,11 @@ export async function handleRescope(featureName: string, reason: string): Promis
 
 export async function handleResolve(featureName: string, ownerName: string): Promise<void> {
   const entries = await getEntriesForFeature(featureName);
-  const entry = entries.find(e => e.ownerName.toLowerCase() === ownerName.toLowerCase() && e.status === 'Concern Raised');
+  // Accept either a Slack mention (<@U123>) or a plain name
+  const slackIdMatch = ownerName.match(/^<@([A-Z0-9]+)>$/i);
+  const entry = slackIdMatch
+    ? entries.find(e => e.ownerSlackId === slackIdMatch[1] && e.status === 'Concern Raised')
+    : entries.find(e => e.ownerName.toLowerCase() === ownerName.toLowerCase() && e.status === 'Concern Raised');
   if (!entry) return;
 
   entry.status = 'Scope Review';

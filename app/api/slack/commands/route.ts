@@ -56,21 +56,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (subcommand === 'resolve') {
-    // Format: /archie resolve Feature Name owner-name
-    // Last word is the owner name
-    const lastSpace = rest.lastIndexOf(' ');
-    if (lastSpace < 0) {
-      return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/archie resolve [Feature Name] [Owner Name]`' });
+    // Format: /archie resolve Feature Name owner: Owner Name
+    const ownerMatch = rest.match(/^(.*?)\s+owner:\s*(.+)$/i);
+    if (!ownerMatch) {
+      return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/archie resolve [Feature Name] owner: [Owner Name]`' });
     }
-    const featureName = rest.slice(0, lastSpace).trim();
-    const ownerName = rest.slice(lastSpace + 1).trim();
+    const featureName = ownerMatch[1].trim();
+    const ownerName = ownerMatch[2].trim();
     waitUntil(handleResolve(featureName, ownerName));
     return ack;
   }
 
   // Unknown subcommand
   waitUntil(postEphemeral(channelId, userId,
-    'Available commands:\n• `/archie signoff [Feature Name]`\n• `/archie qa-signoff [Feature Name]`\n• `/archie rescope [Feature Name] reason: [reason]`\n• `/archie resolve [Feature Name] [Owner Name]`'
+    'Available commands:\n• `/archie signoff [Feature Name]`\n• `/archie qa-signoff [Feature Name]`\n• `/archie rescope [Feature Name] reason: [reason]`\n• `/archie resolve [Feature Name] owner: [Owner Name]`'
   ));
   return NextResponse.json({});
 }
