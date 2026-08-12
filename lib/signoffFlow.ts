@@ -529,10 +529,18 @@ async function checkCompletion(
   const ownerEntries = entries.filter(e => e.track !== 'COORDINATOR');
   if (ownerEntries.length === 0) return;
 
-  const allSigned = ownerEntries.every(e => e.status === 'Signed Off');
+  // Deduplicate by track — use the latest entry (highest rowIndex) per track
+  const latestByTrack = new Map<string, SignoffEntry>();
+  for (const e of ownerEntries) {
+    const existing = latestByTrack.get(e.track);
+    if (!existing || e.rowIndex > existing.rowIndex) latestByTrack.set(e.track, e);
+  }
+  const latest = Array.from(latestByTrack.values());
+
+  const allSigned = latest.every(e => e.status === 'Signed Off');
   if (!allSigned) return;
 
-  const summary = ownerEntries
+  const summary = latest
     .map(e => `— *${e.track}:* ${e.ownerName} · ${e.manDays} days · delivery ${e.committedDate} ✓`)
     .join('\n');
 
