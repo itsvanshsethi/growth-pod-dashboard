@@ -346,15 +346,17 @@ export async function handleButtonAction(
 
   if (actionId === 'prd_reviewed_yes') {
     await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — PRD reviewed ✓`, scopeReviewBlocks({ ...ctx, msgTs: ctx.msgTs }));
-    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
-    if (entry) { entry.status = 'Scope Review'; await saveSignoffEntry(entry); }
+    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round) ?? entryFromCtx(ctx);
+    entry.status = 'Scope Review';
+    await saveSignoffEntry(entry);
 
   } else if (actionId === 'prd_reviewed_wait') {
     await updateMessage(ctx.channelId, ctx.msgTs,
       `${ctx.ownerMention} (${ctx.track}) — ⏳ No problem, I'll check back in 24 hours.`,
     );
-    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
-    if (entry) { entry.status = 'PRD Wait'; await saveSignoffEntry(entry); }
+    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round) ?? entryFromCtx(ctx);
+    entry.status = 'PRD Wait';
+    await saveSignoffEntry(entry);
 
   } else if (actionId === 'scope_signoff_yes') {
     // Open modal to collect man-days + date
@@ -447,6 +449,21 @@ export async function handleButtonAction(
   }
 }
 
+function entryFromCtx(ctx: ActionContext): SignoffEntry {
+  return {
+    featureName: ctx.featureName, track: ctx.track,
+    ownerName: ctx.ownerName, ownerSlackId: ctx.ownerSlackId,
+    status: '', manDays: '', committedDate: '', signoffDate: '', concerns: '',
+    round: ctx.round, channelId: ctx.channelId,
+    parentThreadTs: ctx.parentThreadTs, ownerThreadTs: ctx.threadTs,
+    pmSlackId: ctx.pmSlackId, pmDmChannel: ctx.pmDmChannel, pmDmThreadTs: '',
+    initiatedAt: new Date().toISOString(), lastRemindedAt: '',
+    reminderCount: '0', awaitingInput: '',
+    metadata: JSON.stringify({ prdUrl: ctx.prdUrl }),
+    rowIndex: 0,
+  };
+}
+
 // ── Handle modal submissions ───────────────────────────────────────────────────
 
 export async function handleModalSubmit(
@@ -462,14 +479,13 @@ export async function handleModalSubmit(
     const manDays = viewValues['man_days_block']?.['man_days_input']?.value?.trim() ?? '';
     const date = viewValues['committed_date_block']?.['committed_date_input']?.value?.trim() ?? '';
 
-    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
-    if (entry) {
-      entry.manDays = manDays;
-      entry.committedDate = date;
-      entry.signoffDate = new Date().toISOString().split('T')[0];
-      entry.status = 'Signed Off';
-      await saveSignoffEntry(entry);
-    }
+    let entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
+    if (!entry) entry = entryFromCtx(ctx);
+    entry.manDays = manDays;
+    entry.committedDate = date;
+    entry.signoffDate = new Date().toISOString().split('T')[0];
+    entry.status = 'Signed Off';
+    await saveSignoffEntry(entry);
 
     // Replace the scope sign-off buttons with a static completion state
     await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
@@ -478,12 +494,11 @@ export async function handleModalSubmit(
   } else if (callbackId === 'signoff_concern_modal') {
     const concernText = viewValues['concern_block']?.['concern_input']?.value?.trim() ?? '';
 
-    const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
-    if (entry) {
-      entry.concerns = concernText;
-      entry.status = 'Concern Raised';
-      await saveSignoffEntry(entry);
-    }
+    let entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
+    if (!entry) entry = entryFromCtx(ctx);
+    entry.concerns = concernText;
+    entry.status = 'Concern Raised';
+    await saveSignoffEntry(entry);
 
     // Replace the scope sign-off buttons with a static paused state
     await updateMessage(ctx.channelId, ctx.msgTs,
