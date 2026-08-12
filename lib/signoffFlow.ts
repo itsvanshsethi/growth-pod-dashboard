@@ -17,6 +17,7 @@ export interface ActionContext {
   track: string;
   ownerSlackId: string;
   ownerName: string;
+  ownerMention: string;
   round: string;
   channelId: string;
   parentThreadTs: string;
@@ -37,7 +38,7 @@ function prdReviewBlocks(ctx: ActionContext): Record<string, unknown>[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${ctx.featureName} — Sign-off request*\n<@${ctx.ownerSlackId}>, you're the *${ctx.track}* owner.\n\n*Step 1 of 2 — PRD Review*\nHave you reviewed the PRD?${prdLine}`,
+        text: `*${ctx.featureName} — Sign-off request*\n${ctx.ownerMention}, you're the *${ctx.track}* owner.\n\n*Step 1 of 2 — PRD Review*\nHave you reviewed the PRD?${prdLine}`,
       },
     },
     {
@@ -276,17 +277,19 @@ async function postOwnerThreads(
   const pmDmChannel = await getDMChannel(pmSlackId);
 
   for (const { track, ownerName } of tracks) {
-    const ownerSlackId = await resolveUserIdByName(ownerName) ?? ownerName;
+    const resolvedId = await resolveUserIdByName(ownerName);
+    const ownerSlackId = resolvedId ?? ownerName;
+    const ownerMention = resolvedId ? `<@${resolvedId}>` : ownerName;
 
     const ctx: ActionContext = {
-      featureName, track, ownerSlackId, ownerName, round,
+      featureName, track, ownerSlackId, ownerName, ownerMention, round,
       channelId, parentThreadTs, threadTs: '', msgTs: '',
       pmSlackId, pmDmChannel: pmDmChannel ?? '',
       prdUrl: prdUrl ?? '',
     };
 
     // Post into the parent thread — this reply's ts becomes the owner's sub-thread ts
-    const threadLabel = `Sign-off request — <@${ownerSlackId}> (${track})`;
+    const threadLabel = `Sign-off request — ${ownerMention} (${track})`;
     const ownerTs = await postMessage(channelId, threadLabel, {
       blocks: prdReviewBlocks({ ...ctx, threadTs: parentThreadTs, msgTs: '' }),
       threadTs: parentThreadTs,
@@ -325,15 +328,17 @@ export async function handleButtonAction(
 ): Promise<void> {
   let ctx: ActionContext;
   try { ctx = JSON.parse(rawCtx); } catch { return; }
+  // Back-compat: ownerMention may be missing in old button payloads
+  if (!ctx.ownerMention) ctx.ownerMention = ctx.ownerSlackId?.startsWith('U') ? `<@${ctx.ownerSlackId}>` : ctx.ownerName;
 
   if (actionId === 'prd_reviewed_yes') {
-    await updateMessage(ctx.channelId, ctx.msgTs, `<@${ctx.ownerSlackId}> (${ctx.track}) — PRD reviewed ✓`, scopeReviewBlocks({ ...ctx, msgTs: ctx.msgTs }));
+    await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — PRD reviewed ✓`, scopeReviewBlocks({ ...ctx, msgTs: ctx.msgTs }));
     const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
     if (entry) { entry.status = 'Scope Review'; await saveSignoffEntry(entry); }
 
   } else if (actionId === 'prd_reviewed_wait') {
     await updateMessage(ctx.channelId, ctx.msgTs,
-      `<@${ctx.ownerSlackId}> (${ctx.track}) — No problem, I'll check back in 24 hours.`,
+      `${ctx.ownerMention} (${ctx.track}) — ⏳ No problem, I'll check back in 24 hours.`,
     );
     const entry = await findOwnerEntry(ctx.featureName, ctx.ownerSlackId, ctx.round);
     if (entry) { entry.status = 'PRD Wait'; await saveSignoffEntry(entry); }
@@ -438,6 +443,7 @@ export async function handleModalSubmit(
 ): Promise<void> {
   let ctx: ActionContext;
   try { ctx = JSON.parse(privateMeta); } catch { return; }
+  if (!ctx.ownerMention) ctx.ownerMention = ctx.ownerSlackId?.startsWith('U') ? `<@${ctx.ownerSlackId}>` : ctx.ownerName;
 
   if (callbackId === 'signoff_mandays_modal') {
     const manDays = viewValues['man_days_block']?.['man_days_input']?.value?.trim() ?? '';
@@ -453,7 +459,7 @@ export async function handleModalSubmit(
     }
 
     // Replace the scope sign-off buttons with a static completion state
-    await updateMessage(ctx.channelId, ctx.msgTs, `<@${ctx.ownerSlackId}> (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
+    await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
     await checkCompletion(ctx.featureName, ctx.round, ctx.channelId, ctx.parentThreadTs, ctx.pmSlackId, ctx.pmDmChannel);
 
   } else if (callbackId === 'signoff_concern_modal') {
@@ -468,7 +474,7 @@ export async function handleModalSubmit(
 
     // Replace the scope sign-off buttons with a static paused state
     await updateMessage(ctx.channelId, ctx.msgTs,
-      `<@${ctx.ownerSlackId}> (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.\n_"${concernText}"_\nThe PM has been notified — you'll complete sign-off here once it's sorted.`,
+      `${ctx.ownerMention} (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.\n_"${concernText}"_\nThe PM has been notified — you'll complete sign-off here once it's sorted.`,
     );
 
     await updateFeatureStatus(ctx.featureName, 'Concern Raised');
