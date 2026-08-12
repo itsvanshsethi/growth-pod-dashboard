@@ -277,11 +277,17 @@ async function postOwnerThreads(
   const pmDmChannel = await getDMChannel(pmSlackId);
 
   for (const { track, ownerName } of tracks) {
-    // 1. Check Escalation Matrix for explicit Slack handle mapping
+    // 1. Check Escalation Matrix for explicit Slack handle/ID mapping
     const mappings = await getOwnerMappings(ownerName);
     let resolvedId: string | null = null;
     if (mappings.slackHandle) {
-      resolvedId = await resolveUserIdByName(mappings.slackHandle.replace('@', ''));
+      const handle = mappings.slackHandle.trim();
+      // If it's already a Slack user ID (starts with U + alphanumeric), use directly
+      if (/^U[A-Z0-9]+$/i.test(handle)) {
+        resolvedId = handle;
+      } else {
+        resolvedId = await resolveUserIdByName(handle.replace('@', ''));
+      }
     }
     // 2. Fall back to fuzzy name match
     if (!resolvedId) resolvedId = await resolveUserIdByName(ownerName);
