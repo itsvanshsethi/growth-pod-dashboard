@@ -223,8 +223,9 @@ export async function startSignoff(
     if (featureData.designOwner) tracks.push({ track: 'Design', ownerName: featureData.designOwner });
     if (featureData.beOwner) tracks.push({ track: 'BE', ownerName: featureData.beOwner });
     if (featureData.feOwner) tracks.push({ track: 'FE', ownerName: featureData.feOwner });
+  } else {
+    if (featureData.qaOwner) tracks.push({ track: 'QA', ownerName: featureData.qaOwner });
   }
-  if (featureData.qaOwner) tracks.push({ track: 'QA', ownerName: featureData.qaOwner });
 
   if (tracks.length === 0) {
     await postError(`No owners found for *${featureName}* in the sheet. Please fill in the owner columns first.`);
@@ -267,7 +268,7 @@ export async function startSignoff(
   // Post ephemeral confirmation in channel (only visible to PM)
   const ownerLines = tracks.map(t => `— *${t.track}:* ${t.ownerName}`).join('\n');
   const prdLine = featureData.prdUrl ? `\n— *PRD:* <${featureData.prdUrl}|View PRD>` : '';
-  const confirmCtx = JSON.stringify({ featureName, round, pmSlackId: initiatorSlackId, channelId: channel, prdUrl: featureData.prdUrl, tracks });
+  const confirmCtx = JSON.stringify({ featureName, round, pmSlackId: initiatorSlackId, channelId: channel, prdUrl: featureData.prdUrl, tracks, userId: initiatorSlackId });
   const blocks = [
     {
       type: 'section',
@@ -278,6 +279,8 @@ export async function startSignoff(
       elements: [
         { type: 'button', action_id: 'confirm_signoff', style: 'primary',
           text: { type: 'plain_text', text: '✅  Confirm & send' }, value: confirmCtx },
+        { type: 'button', action_id: 'edit_owners',
+          text: { type: 'plain_text', text: '✏️  Edit owners' }, value: confirmCtx },
         { type: 'button', action_id: 'cancel_signoff',
           text: { type: 'plain_text', text: '✖  Cancel' }, value: confirmCtx },
       ],
@@ -302,13 +305,14 @@ async function postToResponseUrl(
   text: string,
   isError = false,
   blocks?: Record<string, unknown>[],
+  replaceOriginal = false,
 ): Promise<void> {
   await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       response_type: 'ephemeral',
-      replace_original: false,
+      replace_original: replaceOriginal,
       text: text || undefined,
       blocks: blocks || undefined,
       ...(isError ? { text } : {}),
@@ -316,9 +320,12 @@ async function postToResponseUrl(
   });
 }
 
-export async function handleConfirmSignoff(rawCtx: string): Promise<void> {
+export async function handleConfirmSignoff(rawCtx: string, responseUrl?: string): Promise<void> {
   let data: { featureName: string; round: string; pmSlackId: string; channelId: string; prdUrl: string; tracks: Array<{ track: string; ownerName: string }> };
   try { data = JSON.parse(rawCtx); } catch { return; }
+
+  // Replace ephemeral immediately so the PM knows it was received
+  if (responseUrl) await postToResponseUrl(responseUrl, `✅ Sending sign-off requests for *${data.featureName}*…`, false, undefined, true);
 
   // Update coordinator to Confirmed
   const entries = await import('./signoffSheet').then(m => m.getAllSignoffEntries());
@@ -344,7 +351,7 @@ export async function handleConfirmSignoff(rawCtx: string): Promise<void> {
   await postOwnerThreads(data.featureName, data.tracks, data.round, data.channelId, parentTs, data.pmSlackId, data.prdUrl);
 }
 
-export async function handleCancelSignoff(rawCtx: string): Promise<void> {
+export async function handleCancelSignoff(rawCtx: string, responseUrl?: string): Promise<void> {
   let data: { featureName: string; round: string };
   try { data = JSON.parse(rawCtx); } catch { return; }
   const entries = await import('./signoffSheet').then(m => m.getAllSignoffEntries());
@@ -356,6 +363,7 @@ export async function handleCancelSignoff(rawCtx: string): Promise<void> {
     coordinator.status = 'Cancelled';
     await import('./signoffSheet').then(m => m.saveSignoffEntry(coordinator));
   }
+  if (responseUrl) await postToResponseUrl(responseUrl, `❌ Sign-off cancelled for *${data.featureName}*.`, false, undefined, true);
 }
 
 // ── PM Confirmation ────────────────────────────────────────────────────────────
@@ -509,7 +517,44 @@ export async function handleButtonAction(
   actionId: string,
   rawCtx: string,
   triggerId: string,
+  userId = '',
+  responseUrl = '',
 ): Promise<void> {
+  // edit_owners uses confirmCtx shape (not ActionContext) — handle first
+  if (actionId === 'edit_owners') {
+    let cd: { featureName: string; round: string; pmSlackId: string; channelId: string; prdUrl: string; tracks: Array<{ track: string; ownerName: string }> };
+    try { cd = JSON.parse(rawCtx); } catch { return; }
+    const g = (track: string) => cd.tracks.find(t => t.track === track)?.ownerName ?? '';
+    const modalMeta = JSON.stringify({ featureName: cd.featureName, round: cd.round, pmSlackId: cd.pmSlackId, channelId: cd.channelId, prdUrl: cd.prdUrl, userId, responseUrl });
+    await openModal(triggerId, {
+      type: 'modal',
+      callback_id: 'edit_owners_modal',
+      private_metadata: modalMeta,
+      title: { type: 'plain_text', text: 'Edit Owners' },
+      submit: { type: 'plain_text', text: 'Update' },
+      close: { type: 'plain_text', text: 'Back' },
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: `Edit owners for *${cd.featureName}*.\nLeave a field blank to remove that track. Add a name to include a new track.` } },
+        { type: 'input', block_id: 'be_block', optional: true,
+          label: { type: 'plain_text', text: 'BE Owner' },
+          element: { type: 'plain_text_input', action_id: 'be_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('BE') ? { initial_value: g('BE') } : {}) } },
+        { type: 'input', block_id: 'fe_block', optional: true,
+          label: { type: 'plain_text', text: 'FE Owner' },
+          element: { type: 'plain_text_input', action_id: 'fe_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('FE') ? { initial_value: g('FE') } : {}) } },
+        { type: 'input', block_id: 'design_block', optional: true,
+          label: { type: 'plain_text', text: 'Design Owner' },
+          element: { type: 'plain_text_input', action_id: 'design_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('Design') ? { initial_value: g('Design') } : {}) } },
+        { type: 'input', block_id: 'qa_block', optional: true,
+          label: { type: 'plain_text', text: 'QA Owner (cross-team only)' },
+          element: { type: 'plain_text_input', action_id: 'qa_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('QA') ? { initial_value: g('QA') } : {}) } },
+        { type: 'input', block_id: 'data_block', optional: true,
+          label: { type: 'plain_text', text: 'Data / Analytics Owner' },
+          element: { type: 'plain_text_input', action_id: 'data_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('Data') ? { initial_value: g('Data') } : {}) } },
+      ],
+    });
+    return;
+  }
+
   let ctx: ActionContext;
   try { ctx = JSON.parse(rawCtx); } catch { return; }
   // Back-compat: ownerMention may be missing in old button payloads
@@ -642,6 +687,54 @@ export async function handleModalSubmit(
   viewValues: Record<string, Record<string, { value?: string; selected_date?: string }>>,
   privateMeta: string,
 ): Promise<void> {
+  if (callbackId === 'edit_owners_modal') {
+    let data: { featureName: string; round: string; pmSlackId: string; channelId: string; prdUrl: string; userId: string; responseUrl: string };
+    try { data = JSON.parse(privateMeta); } catch { return; }
+
+    const FIELDS = [
+      { track: 'BE', blockId: 'be_block', inputId: 'be_input' },
+      { track: 'FE', blockId: 'fe_block', inputId: 'fe_input' },
+      { track: 'Design', blockId: 'design_block', inputId: 'design_input' },
+      { track: 'QA', blockId: 'qa_block', inputId: 'qa_input' },
+      { track: 'Data', blockId: 'data_block', inputId: 'data_input' },
+    ];
+    const newTracks = FIELDS
+      .map(({ track, blockId, inputId }) => {
+        const val = viewValues[blockId]?.[inputId]?.value?.trim();
+        return val ? { track, ownerName: val } : null;
+      })
+      .filter((t): t is { track: string; ownerName: string } => t !== null);
+
+    if (newTracks.length === 0) return;
+
+    // Update coordinator metadata in sheet
+    const all = await getAllSignoffEntries();
+    const coord = all.find(e =>
+      e.featureName.toLowerCase() === data.featureName.toLowerCase() &&
+      e.track === 'COORDINATOR' && e.round === data.round
+    );
+    if (coord) {
+      coord.metadata = JSON.stringify({ prdUrl: data.prdUrl, tracks: newTracks });
+      coord.ownerName = newTracks.map(t => t.ownerName).join(', ');
+      await saveSignoffEntry(coord);
+    }
+
+    // Replace the ephemeral with updated confirmation
+    const ownerLines = newTracks.map(t => `— *${t.track}:* ${t.ownerName}`).join('\n');
+    const prdLine = data.prdUrl ? `\n— *PRD:* <${data.prdUrl}|View PRD>` : '';
+    const confirmCtx = JSON.stringify({ featureName: data.featureName, round: data.round, pmSlackId: data.pmSlackId, channelId: data.channelId, prdUrl: data.prdUrl, tracks: newTracks, userId: data.userId });
+    const blocks = [
+      { type: 'section', text: { type: 'mrkdwn', text: `📋 *Starting sign-off for: ${data.featureName}*\n\nHere's who I'll send sign-off requests to:\n${ownerLines}${prdLine}\n\nConfirm to proceed.` } },
+      { type: 'actions', elements: [
+        { type: 'button', action_id: 'confirm_signoff', style: 'primary', text: { type: 'plain_text', text: '✅  Confirm & send' }, value: confirmCtx },
+        { type: 'button', action_id: 'edit_owners', text: { type: 'plain_text', text: '✏️  Edit owners' }, value: confirmCtx },
+        { type: 'button', action_id: 'cancel_signoff', text: { type: 'plain_text', text: '✖  Cancel' }, value: confirmCtx },
+      ] },
+    ];
+    if (data.responseUrl) await postToResponseUrl(data.responseUrl, `Owners updated for ${data.featureName}`, false, blocks, true);
+    return;
+  }
+
   let ctx: ActionContext;
   try { ctx = JSON.parse(privateMeta); } catch { return; }
   if (!ctx.ownerMention) ctx.ownerMention = ctx.ownerSlackId?.startsWith('U') ? `<@${ctx.ownerSlackId}>` : ctx.ownerName;

@@ -26,6 +26,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (payloadType === 'block_actions') {
     const triggerId = (payload.trigger_id as string) ?? '';
+    const responseUrl = (payload.response_url as string) ?? '';
+    const userId = ((payload.user as Record<string, string>)?.id) ?? '';
     const actions = (payload.actions as Array<Record<string, string>>) ?? [];
     const action = actions[0];
     if (!action) return NextResponse.json({});
@@ -34,16 +36,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const value = action.value ?? '';
 
     if (actionId === 'confirm_signoff') {
-      waitUntil(handleConfirmSignoff(value));
-      return NextResponse.json({ delete_original: true });
+      waitUntil(handleConfirmSignoff(value, responseUrl));
+      return NextResponse.json({});
     }
     if (actionId === 'cancel_signoff') {
-      waitUntil(handleCancelSignoff(value));
-      return NextResponse.json({ delete_original: true });
+      waitUntil(handleCancelSignoff(value, responseUrl));
+      return NextResponse.json({});
     }
 
     // trigger_id expires in 3 seconds — openModal is called inside handleButtonAction immediately
-    waitUntil(handleButtonAction(actionId, value, triggerId));
+    waitUntil(handleButtonAction(actionId, value, triggerId, userId, responseUrl));
     return NextResponse.json({});
   }
 
