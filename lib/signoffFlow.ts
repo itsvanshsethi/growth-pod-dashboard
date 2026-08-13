@@ -682,45 +682,51 @@ export async function handleRescope(featureName: string, reason: string, tracksF
   await saveSignoffEntry(coordinator);
   await updateFeatureStatus(featureName, 'Ready for Eng Review');
 
-  // Deduplicate by track — take latest entry per track
-  const allOwnerEntries = entries.filter(e => e.track !== 'COORDINATOR' && e.round === oldRound);
+  // Build lookup of existing sheet entries by track for ownerThreadTs/channelId
+  const allOwnerEntries = entries.filter(e => e.track !== 'COORDINATOR');
   const latestByTrack = new Map<string, SignoffEntry>();
   for (const e of allOwnerEntries) {
     const existing = latestByTrack.get(e.track);
     if (!existing || e.rowIndex > existing.rowIndex) latestByTrack.set(e.track, e);
   }
-  const ownerEntries = Array.from(latestByTrack.values()).filter(e =>
-    !tracksFilter || tracksFilter.map(t => t.toLowerCase()).includes(e.track.toLowerCase())
+
+  // Use meta.tracks as the source of truth — ensures all owners are included even if sheet entries are missing
+  const tracksToRescope = meta.tracks.filter(t =>
+    !tracksFilter || tracksFilter.map(f => f.toLowerCase()).includes(t.track.toLowerCase())
   );
-  for (const old of ownerEntries) {
-    // Re-resolve owner ID from Escalation Matrix in case it was added/updated since last round
-    const mappings = await getOwnerMappings(old.ownerName);
+
+  for (const { track, ownerName } of tracksToRescope) {
+    const old = latestByTrack.get(track);
+    const mappings = await getOwnerMappings(ownerName);
     let resolvedId: string | null = null;
     if (mappings.slackHandle) {
       const handle = mappings.slackHandle.trim();
       resolvedId = /^U[A-Z0-9]+$/i.test(handle) ? handle : await resolveUserIdByName(handle.replace('@', ''));
     }
-    if (!resolvedId && old.ownerSlackId.startsWith('U')) resolvedId = old.ownerSlackId;
-    const ownerSlackId = resolvedId ?? old.ownerName;
-    const ownerMention = resolvedId ? `<@${resolvedId}>` : old.ownerName;
+    if (!resolvedId && old?.ownerSlackId.startsWith('U')) resolvedId = old.ownerSlackId;
+    const ownerSlackId = resolvedId ?? ownerName;
+    const ownerMention = resolvedId ? `<@${resolvedId}>` : ownerName;
+    const channelId = old?.channelId || coordinator.channelId;
+    const parentThreadTs = old?.parentThreadTs || coordinator.parentThreadTs;
+    const ownerThreadTs = old?.ownerThreadTs || '';
     const ctx: ActionContext = {
-      featureName, track: old.track, ownerSlackId, ownerName: old.ownerName,
+      featureName, track, ownerSlackId, ownerName,
       ownerMention,
-      round: newRound, channelId: old.channelId, parentThreadTs: old.parentThreadTs,
-      threadTs: old.ownerThreadTs, msgTs: '', pmSlackId: coordinator.pmSlackId,
+      round: newRound, channelId, parentThreadTs,
+      threadTs: ownerThreadTs, msgTs: '', pmSlackId: coordinator.pmSlackId,
       pmDmChannel: coordinator.pmDmChannel, prdUrl: meta.prdUrl,
     };
-    const newMsgTs = await postMessage(old.channelId,
-      `Round ${newRound} sign-off request for ${old.ownerName} (${old.track})`,
-      { blocks: prdReviewBlocks({ ...ctx, msgTs: '' }), threadTs: old.ownerThreadTs },
+    const newMsgTs = await postMessage(channelId,
+      `Round ${newRound} sign-off request for ${ownerName} (${track})`,
+      { blocks: prdReviewBlocks({ ...ctx, msgTs: '' }), threadTs: ownerThreadTs || parentThreadTs },
     );
     if (newMsgTs) {
-      await updateMessage(old.channelId, newMsgTs, `Sign-off request for ${old.ownerName} (${old.track})`,
+      await updateMessage(channelId, newMsgTs, `Sign-off request for ${ownerName} (${track})`,
         prdReviewBlocks({ ...ctx, msgTs: newMsgTs }),
       );
     }
     const newEntry: SignoffEntry = {
-      ...old, round: newRound, status: 'PRD Review',
+      ...(old ?? entryFromCtx(ctx)), round: newRound, status: 'PRD Review',
       manDays: '', committedDate: '', signoffDate: '', concerns: '',
       initiatedAt: new Date().toISOString(), lastRemindedAt: '', reminderCount: '0',
       rowIndex: 0,
