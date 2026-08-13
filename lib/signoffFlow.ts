@@ -1,5 +1,5 @@
 import { askAI } from './aiClient';
-import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus } from './googleAuth';
+import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives } from './googleAuth';
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
   getEntriesForFeature, findByPMThread, findOwnerEntry, getCurrentRound,
