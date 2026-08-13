@@ -764,9 +764,19 @@ export async function handleModalSubmit(
     entry.status = 'Concern Raised';
     await saveSignoffEntry(entry);
 
-    // Replace the scope sign-off buttons with a static paused state
+    const calTitle = encodeURIComponent(`Sync: ${ctx.featureName} — ${ctx.ownerName} concern`);
+    const calDetails = encodeURIComponent(`${ctx.ownerName} (${ctx.track}) raised a concern:\n${concernText}`);
+    const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${calTitle}&details=${calDetails}&dur=30`;
+
+    // Replace the scope sign-off buttons with a paused state + calendar button
     await updateMessage(ctx.channelId, ctx.msgTs,
-      `${ctx.ownerMention} (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.\n_"${concernText}"_\nThe PM has been notified — you'll complete sign-off here once it's sorted.`,
+      `${ctx.ownerMention} (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.`,
+      [
+        { type: 'section', text: { type: 'mrkdwn', text: `${ctx.ownerMention} (${ctx.track}) — ⚠️ Concern raised. Sign-off is paused until resolved.\n_"${concernText}"_\nThe PM has been notified — you'll complete sign-off here once it's sorted.` } },
+        { type: 'actions', elements: [
+          { type: 'button', text: { type: 'plain_text', text: '📅  Schedule a sync with PM' }, url: calUrl },
+        ] },
+      ],
     );
 
     await updateFeatureStatus(ctx.featureName, 'Concern Raised');
@@ -774,6 +784,12 @@ export async function handleModalSubmit(
     if (ctx.pmDmChannel) {
       await postMessage(ctx.pmDmChannel,
         `<@${ctx.pmSlackId}> — <@${ctx.ownerSlackId}> has raised a concern on *${ctx.featureName}* (${ctx.track}):\n\n_"${concernText}"_\n\nSign-off is paused for this owner. Reply here to resolve, or discuss directly with them first.`,
+        { blocks: [
+          { type: 'section', text: { type: 'mrkdwn', text: `<@${ctx.pmSlackId}> — <@${ctx.ownerSlackId}> has raised a concern on *${ctx.featureName}* (${ctx.track}):\n\n_"${concernText}"_\n\nSign-off is paused for this owner. Reply here to resolve, or discuss directly with them first.` } },
+          { type: 'actions', elements: [
+            { type: 'button', text: { type: 'plain_text', text: '📅  Schedule a sync' }, url: calUrl },
+          ] },
+        ] },
       );
     }
   }
