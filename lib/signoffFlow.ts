@@ -220,7 +220,6 @@ export async function startSignoff(
 
   const tracks: Array<{ track: string; ownerName: string }> = [];
   if (!isQA) {
-    if (featureData.designOwner) tracks.push({ track: 'Design', ownerName: featureData.designOwner });
     if (featureData.beOwner) tracks.push({ track: 'BE', ownerName: featureData.beOwner });
     if (featureData.feOwner) tracks.push({ track: 'FE', ownerName: featureData.feOwner });
   } else {
