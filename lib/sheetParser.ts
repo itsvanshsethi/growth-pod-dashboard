@@ -173,7 +173,7 @@ export function parseSheetRows(
     const confidenceRaw = getCell(row, COL.CONFIDENCE);
     const status = normalizeStatus(statusRaw);
     const confidence = normalizeConfidence(confidenceRaw);
-    const goLiveDate = getCell(row, COL.GO_LIVE_DATE);
+    const goLiveDate = getCell(row, COL.FEATURE_LIVE_ACTUAL);
     const quarter = getCell(row, COL.SPRINT);
 
     const progress = deriveProgress(row, status);
