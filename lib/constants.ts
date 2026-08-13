@@ -54,6 +54,11 @@ export const COL = {
   OTHER_URL: 50,          // AY
   NORTH_STAR: 51,         // AZ
   NOTES: 52,              // BA
+  PLATFORM_OWNER: 53,     // BB
+  PLATFORM_MAN_DAYS: 54,  // BC
+  PLATFORM_ETA: 55,       // BD
+  PLATFORM_ACTUAL: 56,    // BE
+  PLATFORM_STATUS: 57,    // BF
 } as const;
 
 export const STATUS_COLUMNS = [

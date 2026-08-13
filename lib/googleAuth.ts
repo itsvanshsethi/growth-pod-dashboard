@@ -231,8 +231,8 @@ export async function updateSignoffDataInSheet(
     if (title.toLowerCase() === featureName.toLowerCase()) {
       const sheetRow = i + 1;
       const trackUpper = track.toUpperCase();
-      const etaCol   = trackUpper === 'BE' ? COL.BE_ETA   : trackUpper === 'FE' ? COL.FE_ETA   : trackUpper === 'QA' ? COL.QA_ETA   : null;
-      const mdCol    = trackUpper === 'BE' ? COL.BE_MAN_DAYS : trackUpper === 'FE' ? COL.FE_MAN_DAYS : trackUpper === 'QA' ? COL.QA_MAN_DAYS : null;
+      const etaCol   = trackUpper === 'BE' ? COL.BE_ETA   : trackUpper === 'FE' ? COL.FE_ETA   : trackUpper === 'QA' ? COL.QA_ETA   : trackUpper === 'PLATFORM' ? COL.PLATFORM_ETA   : null;
+      const mdCol    = trackUpper === 'BE' ? COL.BE_MAN_DAYS : trackUpper === 'FE' ? COL.FE_MAN_DAYS : trackUpper === 'QA' ? COL.QA_MAN_DAYS : trackUpper === 'PLATFORM' ? COL.PLATFORM_MAN_DAYS : null;
       if (etaCol !== null && committedDate) await updateCellInSheet(firstSheet, sheetRow, etaCol, committedDate);
       if (mdCol  !== null && manDays)       await updateCellInSheet(firstSheet, sheetRow, mdCol,  manDays);
       return;

@@ -1,5 +1,5 @@
 import { askAI } from './aiClient';
-import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives, updateSignoffDataInSheet, getGoogleAuth, fetchSheetRange, ensureSheetTab, appendToSheet, getFirstSheetName } from './googleAuth';
+import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives, updateSignoffDataInSheet, updateCellInSheet, getGoogleAuth, fetchSheetRange, ensureSheetTab, appendToSheet, getFirstSheetName } from './googleAuth';
 import { COL } from './constants';
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
@@ -703,6 +703,23 @@ function entryFromCtx(ctx: ActionContext): SignoffEntry {
   };
 }
 
+// Appends sign-off data for tracks without dedicated sheet columns (e.g. App Platform, Data) to the NOTES cell
+async function appendSignoffToNotes(featureName: string, track: string, manDays: string, date: string): Promise<void> {
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BF`, auth);
+  for (let i = 2; i < rows.length; i++) {
+    const title = (rows[i][COL.FEATURE] ?? '').trim();
+    if (title.toLowerCase() === featureName.toLowerCase()) {
+      const existing = (rows[i][COL.NOTES] ?? '').trim();
+      const entry = `${track}: ${manDays} days, ETA ${date}`;
+      const updated = existing ? `${existing} | ${entry}` : entry;
+      await updateCellInSheet(firstSheet, i + 1, COL.NOTES, updated);
+      return;
+    }
+  }
+}
+
 // ── Handle modal submissions ───────────────────────────────────────────────────
 
 export async function handleModalSubmit(
@@ -778,8 +795,13 @@ export async function handleModalSubmit(
 
     // Replace the scope sign-off buttons with a static completion state
     await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
-    // Write back to Sprint Plan sheet
-    await updateSignoffDataInSheet(ctx.featureName, ctx.track, manDays, date);
+    // Write back to Sprint Plan sheet — Platform and BE/FE/QA have dedicated columns; others append to Notes
+    const SHEET_TRACKS = ['BE', 'FE', 'QA', 'PLATFORM'];
+    if (SHEET_TRACKS.includes(ctx.track.toUpperCase())) {
+      await updateSignoffDataInSheet(ctx.featureName, ctx.track, manDays, date);
+    } else {
+      await appendSignoffToNotes(ctx.featureName, ctx.track, manDays, date);
+    }
     await checkCompletion(ctx.featureName, ctx.round, ctx.channelId, ctx.parentThreadTs, ctx.pmSlackId, ctx.pmDmChannel);
 
   } else if (callbackId === 'signoff_concern_modal') {
@@ -1129,7 +1151,7 @@ export async function checkEtaOverdue(): Promise<void> {
 
   const auth = await getGoogleAuth();
   const firstSheet = await getFirstSheetName(auth);
-  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BF`, auth);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -1138,6 +1160,7 @@ export async function checkEtaOverdue(): Promise<void> {
     { track: 'BE', ownerCol: COL.BE_OWNER, etaCol: COL.BE_ETA, statusCol: COL.BE_STATUS },
     { track: 'FE', ownerCol: COL.FE_OWNER, etaCol: COL.FE_ETA, statusCol: COL.FE_STATUS },
     { track: 'QA', ownerCol: COL.QA_OWNER, etaCol: COL.QA_ETA, statusCol: COL.QA_STATUS },
+    { track: 'Platform', ownerCol: COL.PLATFORM_OWNER, etaCol: COL.PLATFORM_ETA, statusCol: COL.PLATFORM_STATUS },
   ];
 
   const overdue: Array<{ featureName: string; track: string; ownerName: string; eta: string; status: string }> = [];
