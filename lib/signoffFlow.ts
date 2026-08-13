@@ -12,6 +12,12 @@ import {
 const SIGNOFF_CHANNEL = () => process.env.SIGNOFF_CHANNEL ?? '';
 const PM_SLACK_ID = () => process.env.PM_SLACK_HANDLE ?? '';
 
+// Reminder thresholds — override via env vars for testing (in ms)
+// Defaults: Reminder 1 after 24h, Reminder 2 after 12h, Escalation after 12h
+const REMINDER_1_MS = parseInt(process.env.REMINDER_1_MS ?? String(24 * 60 * 60 * 1000), 10);
+const REMINDER_2_MS = parseInt(process.env.REMINDER_2_MS ?? String(12 * 60 * 60 * 1000), 10);
+const ESCALATION_MS = parseInt(process.env.ESCALATION_MS ?? String(12 * 60 * 60 * 1000), 10);
+
 export interface ActionContext {
   featureName: string;
   track: string;
