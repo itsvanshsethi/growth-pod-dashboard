@@ -589,6 +589,7 @@ export async function handleRescope(featureName: string, reason: string, tracksF
   coordinator.round = newRound;
   coordinator.status = 'Confirmed';
   await saveSignoffEntry(coordinator);
+  await updateFeatureStatus(featureName, 'Ready for Eng Review');
 
   // Deduplicate by track — take latest entry per track
   const allOwnerEntries = entries.filter(e => e.track !== 'COORDINATOR' && e.round === oldRound);
