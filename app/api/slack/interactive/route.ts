@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { verifySlackRequest } from '@/lib/slackClient';
-import { handleButtonAction, handleModalSubmit } from '@/lib/signoffFlow';
+import { handleButtonAction, handleModalSubmit, handleConfirmSignoff, handleCancelSignoff } from '@/lib/signoffFlow';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +32,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const actionId = action.action_id ?? '';
     const value = action.value ?? '';
+
+    if (actionId === 'confirm_signoff') {
+      waitUntil(handleConfirmSignoff(value));
+      return NextResponse.json({ delete_original: true });
+    }
+    if (actionId === 'cancel_signoff') {
+      waitUntil(handleCancelSignoff(value));
+      return NextResponse.json({ delete_original: true });
+    }
 
     // trigger_id expires in 3 seconds — openModal is called inside handleButtonAction immediately
     waitUntil(handleButtonAction(actionId, value, triggerId));

@@ -109,19 +109,26 @@ export async function startSignoff(
   featureName: string,
   initiatorSlackId: string,
   isQA = false,
+  responseUrl?: string,
 ): Promise<void> {
   await initSignoffTabs();
 
+  const postError = async (msg: string) => {
+    if (responseUrl) await postToResponseUrl(responseUrl, msg, true);
+    else {
+      const dmCh = await getDMChannel(initiatorSlackId);
+      if (dmCh) await postMessage(dmCh, msg);
+    }
+  };
+
   if (await hasActiveSignoff(featureName)) {
-    const dmCh = await getDMChannel(initiatorSlackId);
-    if (dmCh) await postMessage(dmCh, `A sign-off flow is already active for *${featureName}*. Use \`/archie rescope\` to restart it.`);
+    await postError(`A sign-off flow is already active for *${featureName}*. Use \`/archie-rescope\` to restart it.`);
     return;
   }
 
   const featureData = await getFeatureRow(featureName);
   if (!featureData) {
-    const dmCh = await getDMChannel(initiatorSlackId);
-    if (dmCh) await postMessage(dmCh, `Couldn't find *${featureName}* in the sheet. Check the exact name and try again.`);
+    await postError(`Couldn't find *${featureName}* in the sheet. Check the exact name and try again.`);
     return;
   }
 
@@ -134,57 +141,135 @@ export async function startSignoff(
   if (featureData.qaOwner) tracks.push({ track: 'QA', ownerName: featureData.qaOwner });
 
   if (tracks.length === 0) {
-    const dmCh = await getDMChannel(initiatorSlackId);
-    if (dmCh) await postMessage(dmCh, `No owners found for *${featureName}* in the sheet. Please fill in the owner columns first.`);
+    await postError(`No owners found for *${featureName}* in the sheet. Please fill in the owner columns first.`);
     return;
   }
 
   await updateFeatureStatus(featureName, 'Ready for Eng Review');
 
+  const channel = SIGNOFF_CHANNEL();
+  if (!channel) {
+    await postError('`SIGNOFF_CHANNEL` env var is not set. Ask your admin to configure it.');
+    return;
+  }
+
   if (isQA) {
-    // QA sign-off skips PM confirmation — go straight to posting
-    const channel = SIGNOFF_CHANNEL();
-    if (!channel) {
-      console.error('[Signoff] SIGNOFF_CHANNEL env var not set');
-      return;
-    }
     const round = String(await getCurrentRound(featureName) + 1);
-    const parentTs = await postMessage(channel, `Dev is complete on *${featureName}*. Initiating QA sign-off with <@${await resolveUserIdByName(featureData.qaOwner) ?? featureData.qaOwner}>.`);
+    const parentTs = await postMessage(channel, `Dev is complete on *${featureName}*. Initiating QA sign-off.`);
     if (!parentTs) return;
     await postOwnerThreads(featureName, tracks, round, channel, parentTs, initiatorSlackId, featureData.prdUrl);
     return;
   }
 
-  // Engineering sign-off — DM PM for confirmation
-  const pmDmChannel = await getDMChannel(initiatorSlackId);
-  if (!pmDmChannel) {
-    console.error('[Signoff] Could not open DM with initiator', initiatorSlackId);
-    return;
-  }
-
-  const ownerLines = tracks.map(t => `— *${t.track}:* ${t.ownerName}`).join('\n');
-  const prdLine = featureData.prdUrl ? `\n— *PRD:* <${featureData.prdUrl}|View PRD>` : '';
-
-  const dmText = `📋 *Starting sign-off for: ${featureName}*\n\nHere's who I'll send sign-off requests to based on the sheet:\n${ownerLines}${prdLine}\n\nReply to confirm, swap an owner ("BE → Arun"), or add cross-team owners ("add @ravi-payments"). You can do multiple in one reply.\n\nI'll send nothing until you confirm.`;
-
-  const dmTs = await postMessage(pmDmChannel, dmText);
-  if (!dmTs) return;
-
+  // Save COORDINATOR row
   const round = String((await getCurrentRound(featureName)) + 1);
   const coordinator: SignoffEntry = {
     featureName, track: 'COORDINATOR',
     ownerName: tracks.map(t => t.ownerName).join(', '),
     ownerSlackId: '', status: 'Awaiting PM Confirmation',
     manDays: '', committedDate: '', signoffDate: '', concerns: '',
-    round, channelId: SIGNOFF_CHANNEL(),
+    round, channelId: channel,
     parentThreadTs: '', ownerThreadTs: '', pmSlackId: initiatorSlackId,
-    pmDmChannel, pmDmThreadTs: dmTs,
+    pmDmChannel: '', pmDmThreadTs: '',
     initiatedAt: new Date().toISOString(), lastRemindedAt: '',
     reminderCount: '0', awaitingInput: '',
-    metadata: JSON.stringify({ prdUrl: featureData.prdUrl, tracks: tracks.map(t => ({ track: t.track, ownerName: t.ownerName })) }),
+    metadata: JSON.stringify({ prdUrl: featureData.prdUrl, tracks }),
     rowIndex: 0,
   };
   await addSignoffEntry(coordinator);
+
+  // Post ephemeral confirmation in channel (only visible to PM)
+  const ownerLines = tracks.map(t => `— *${t.track}:* ${t.ownerName}`).join('\n');
+  const prdLine = featureData.prdUrl ? `\n— *PRD:* <${featureData.prdUrl}|View PRD>` : '';
+  const confirmCtx = JSON.stringify({ featureName, round, pmSlackId: initiatorSlackId, channelId: channel, prdUrl: featureData.prdUrl, tracks });
+  const blocks = [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `📋 *Starting sign-off for: ${featureName}*\n\nHere's who I'll send sign-off requests to:\n${ownerLines}${prdLine}\n\nConfirm to proceed.` },
+    },
+    {
+      type: 'actions',
+      elements: [
+        { type: 'button', action_id: 'confirm_signoff', style: 'primary',
+          text: { type: 'plain_text', text: '✅  Confirm & send' }, value: confirmCtx },
+        { type: 'button', action_id: 'cancel_signoff',
+          text: { type: 'plain_text', text: '✖  Cancel' }, value: confirmCtx },
+      ],
+    },
+  ];
+
+  if (responseUrl) {
+    await postToResponseUrl(responseUrl, '', false, blocks);
+  } else {
+    // Fallback: ephemeral via API
+    const token = process.env.SLACK_BOT_TOKEN;
+    await fetch('https://slack.com/api/chat.postEphemeral', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel, user: initiatorSlackId, text: `Sign-off confirmation for ${featureName}`, blocks }),
+    });
+  }
+}
+
+async function postToResponseUrl(
+  url: string,
+  text: string,
+  isError = false,
+  blocks?: Record<string, unknown>[],
+): Promise<void> {
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      response_type: 'ephemeral',
+      replace_original: false,
+      text: text || undefined,
+      blocks: blocks || undefined,
+      ...(isError ? { text } : {}),
+    }),
+  });
+}
+
+export async function handleConfirmSignoff(rawCtx: string): Promise<void> {
+  let data: { featureName: string; round: string; pmSlackId: string; channelId: string; prdUrl: string; tracks: Array<{ track: string; ownerName: string }> };
+  try { data = JSON.parse(rawCtx); } catch { return; }
+
+  // Update coordinator to Confirmed
+  const entries = await import('./signoffSheet').then(m => m.getAllSignoffEntries());
+  const coordinator = entries.find(e =>
+    e.featureName.toLowerCase() === data.featureName.toLowerCase() &&
+    e.track === 'COORDINATOR' && e.round === data.round
+  );
+  if (coordinator) {
+    coordinator.status = 'Confirmed';
+    await import('./signoffSheet').then(m => m.saveSignoffEntry(coordinator));
+  }
+
+  const parentTs = await postMessage(data.channelId,
+    `📋 *Sign-off initiated: ${data.featureName}*\nRequesting sign-off from ${data.tracks.map(t => t.ownerName).join(', ')}\nEach owner has a dedicated thread below.`,
+  );
+  if (!parentTs) return;
+
+  if (coordinator) {
+    coordinator.parentThreadTs = parentTs;
+    await import('./signoffSheet').then(m => m.saveSignoffEntry(coordinator));
+  }
+
+  await postOwnerThreads(data.featureName, data.tracks, data.round, data.channelId, parentTs, data.pmSlackId, data.prdUrl);
+}
+
+export async function handleCancelSignoff(rawCtx: string): Promise<void> {
+  let data: { featureName: string; round: string };
+  try { data = JSON.parse(rawCtx); } catch { return; }
+  const entries = await import('./signoffSheet').then(m => m.getAllSignoffEntries());
+  const coordinator = entries.find(e =>
+    e.featureName.toLowerCase() === data.featureName.toLowerCase() &&
+    e.track === 'COORDINATOR' && e.round === data.round
+  );
+  if (coordinator) {
+    coordinator.status = 'Cancelled';
+    await import('./signoffSheet').then(m => m.saveSignoffEntry(coordinator));
+  }
 }
 
 // ── PM Confirmation ────────────────────────────────────────────────────────────

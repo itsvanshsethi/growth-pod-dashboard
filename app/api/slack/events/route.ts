@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { verifySlackRequest, postMessage, updateMessage } from '@/lib/slackClient';
-import { handlePMConfirmation } from '@/lib/signoffFlow';
 import { fetchInitiatives, fetchGoogleDocText } from '@/lib/googleAuth';
 import { buildArchieSystemPrompt } from '@/lib/archieContext';
 import { askAI } from '@/lib/aiClient';
@@ -85,16 +84,6 @@ function findMentionedInitiative(question: string, initiatives: Initiative[]): I
   return initiatives.find(i => q.includes(i.title.toLowerCase())) ?? null;
 }
 
-async function handlePMConfirmationOrAI(
-  dmChannel: string,
-  threadTs: string,
-  text: string,
-  event: Record<string, unknown>,
-) {
-  // Try PM confirmation first; if no active sign-off found, fall back to general AI
-  const handled = await handlePMConfirmation(dmChannel, threadTs, text);
-  if (!handled) await processEvent(event);
-}
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
@@ -127,15 +116,6 @@ export async function POST(req: NextRequest) {
 
   if (!isAppMention && !isDM) return new Response('', { status: 200 });
   if (event.bot_id) return new Response('', { status: 200 });
-
-  // For any DM, check if this is a PM replying to a sign-off confirmation (thread or top-level)
-  if (isDM) {
-    const dmChannel = event.channel as string;
-    const threadTs = (event.thread_ts as string) ?? (event.ts as string) ?? '';
-    const text = (event.text as string) ?? '';
-    waitUntil(handlePMConfirmationOrAI(dmChannel, threadTs, text, event));
-    return new Response('', { status: 200 });
-  }
 
   waitUntil(processEvent(event));
   return new Response('', { status: 200 });

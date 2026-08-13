@@ -45,27 +45,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   const params = new URLSearchParams(body);
-  const command = (params.get('command') ?? '').toLowerCase(); // e.g. /archie-signoff
+  const command = (params.get('command') ?? '').toLowerCase();
   const text = (params.get('text') ?? '').trim();
   const userId = params.get('user_id') ?? '';
   const channelId = params.get('channel_id') ?? '';
+  const responseUrl = params.get('response_url') ?? '';
 
   const ack = NextResponse.json({ response_type: 'ephemeral', text: '_Processing…_' });
 
-  // Determine effective subcommand — from dedicated slash command or /archie [subcommand]
+  // Determine subcommand from dedicated slash command or /archie [subcommand]
   let subcommand = '';
   let rest = text;
 
-  if (command === '/archie-signoff' || command === '/signoff') {
+  if (['/archie-signoff', '/signoff'].includes(command)) {
     subcommand = 'signoff';
-  } else if (command === '/archie-qa-signoff' || command === '/qa-signoff') {
+  } else if (['/archie-qa-signoff', '/qa-signoff'].includes(command)) {
     subcommand = 'qa-signoff';
-  } else if (command === '/archie-rescope' || command === '/rescope') {
+  } else if (['/archie-rescope', '/rescope'].includes(command)) {
     subcommand = 'rescope';
-  } else if (command === '/archie-resolve' || command === '/resolve') {
+  } else if (['/archie-resolve', '/resolve'].includes(command)) {
     subcommand = 'resolve';
   } else {
-    // /archie [subcommand] — legacy
+    // /archie [subcommand] legacy
     const parts = text.split(/\s+/);
     subcommand = parts[0]?.toLowerCase() ?? '';
     rest = parts.slice(1).join(' ').trim();
@@ -73,13 +74,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (subcommand === 'signoff') {
     if (!rest) return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/archie-signoff [Feature Name]`' });
-    waitUntil(safeRun(() => startSignoff(rest, userId), channelId, userId));
+    waitUntil(safeRun(() => startSignoff(rest, userId, false, responseUrl), channelId, userId));
     return ack;
   }
 
   if (subcommand === 'qa-signoff') {
     if (!rest) return NextResponse.json({ response_type: 'ephemeral', text: 'Usage: `/archie-qa-signoff [Feature Name]`' });
-    waitUntil(safeRun(() => startSignoff(rest, userId, true), channelId, userId));
+    waitUntil(safeRun(() => startSignoff(rest, userId, true, responseUrl), channelId, userId));
     return ack;
   }
 
