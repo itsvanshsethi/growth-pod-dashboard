@@ -1,5 +1,5 @@
 import { askAI } from './aiClient';
-import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives } from './googleAuth';
+import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives, updateSignoffDataInSheet } from './googleAuth';
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
   getEntriesForFeature, findByPMThread, findOwnerEntry, getCurrentRound,
@@ -752,6 +752,8 @@ export async function handleModalSubmit(
 
     // Replace the scope sign-off buttons with a static completion state
     await updateMessage(ctx.channelId, ctx.msgTs, `${ctx.ownerMention} (${ctx.track}) — Scope signed off ✅\nLogged — *${manDays}* man-days, delivery by *${date}*.`);
+    // Write back to Sprint Plan sheet
+    await updateSignoffDataInSheet(ctx.featureName, ctx.track, manDays, date);
     await checkCompletion(ctx.featureName, ctx.round, ctx.channelId, ctx.parentThreadTs, ctx.pmSlackId, ctx.pmDmChannel);
 
   } else if (callbackId === 'signoff_concern_modal') {

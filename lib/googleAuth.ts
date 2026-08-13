@@ -204,18 +204,40 @@ export async function ensureSheetTab(tabName: string, headers: string[]): Promis
 export async function updateFeatureStatus(featureName: string, newStatus: string): Promise<boolean> {
   const auth = await getGoogleAuth();
   const firstSheet = await getFirstSheetName(auth);
-  const rows = await fetchSheetRange(`${firstSheet}!A:AN`, auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
   for (let i = 2; i < rows.length; i++) {
     const title = (rows[i][COL.FEATURE] ?? '').trim();
     if (title.toLowerCase() === featureName.toLowerCase()) {
       const sheetRow = i + 1;
-      const range = encodeURIComponent(`${firstSheet}!AN${sheetRow}`);
-      const url = `${SHEETS_BASE}/${SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`;
-      await sheetsWrite(url, 'PUT', { values: [[newStatus]] }, auth);
+      await updateCellInSheet(firstSheet, sheetRow, COL.FEATURE_STATUS, newStatus);
       return true;
     }
   }
   return false;
+}
+
+// Writes man-days and committed ETA back to the Sprint Plan sheet for the given track
+export async function updateSignoffDataInSheet(
+  featureName: string,
+  track: string,
+  manDays: string,
+  committedDate: string,
+): Promise<void> {
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
+  for (let i = 2; i < rows.length; i++) {
+    const title = (rows[i][COL.FEATURE] ?? '').trim();
+    if (title.toLowerCase() === featureName.toLowerCase()) {
+      const sheetRow = i + 1;
+      const trackUpper = track.toUpperCase();
+      const etaCol   = trackUpper === 'BE' ? COL.BE_ETA   : trackUpper === 'FE' ? COL.FE_ETA   : trackUpper === 'QA' ? COL.QA_ETA   : null;
+      const mdCol    = trackUpper === 'BE' ? COL.BE_MAN_DAYS : trackUpper === 'FE' ? COL.FE_MAN_DAYS : trackUpper === 'QA' ? COL.QA_MAN_DAYS : null;
+      if (etaCol !== null && committedDate) await updateCellInSheet(firstSheet, sheetRow, etaCol, committedDate);
+      if (mdCol  !== null && manDays)       await updateCellInSheet(firstSheet, sheetRow, mdCol,  manDays);
+      return;
+    }
+  }
 }
 
 export async function getFeatureRow(featureName: string): Promise<{
@@ -224,7 +246,7 @@ export async function getFeatureRow(featureName: string): Promise<{
 } | null> {
   const auth = await getGoogleAuth();
   const firstSheet = await getFirstSheetName(auth);
-  const rows = await fetchSheetRange(`${firstSheet}!A:AU`, auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i];
     const title = (row[COL.FEATURE] ?? '').trim();
@@ -248,7 +270,7 @@ export async function getFeatureRow(featureName: string): Promise<{
 export async function getFeaturesByStatus(statuses: string[]): Promise<string[]> {
   const auth = await getGoogleAuth();
   const firstSheet = await getFirstSheetName(auth);
-  const rows = await fetchSheetRange(`${firstSheet}!A:AN`, auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
   const lower = statuses.map(s => s.toLowerCase());
   const result: string[] = [];
   for (const row of rows.slice(2)) {
