@@ -62,14 +62,17 @@ function prdReviewBlocks(ctx: ActionContext): Record<string, unknown>[] {
   ];
 }
 
-function scopeReviewBlocks(ctx: ActionContext): Record<string, unknown>[] {
+function scopeReviewBlocks(ctx: ActionContext, resolvedConcern?: string): Record<string, unknown>[] {
   const ctxStr = JSON.stringify(ctx);
+  const header = resolvedConcern
+    ? `✅ *Concern resolved — ${ctx.ownerMention} (${ctx.track})*\n_Previously raised:_ "${resolvedConcern}"\n\n*Step 2 of 2 — Scope Sign-off*\nThe concern above has been addressed. By confirming below, you are signing off on the scope defined in the PRD. This means:`
+    : `PRD reviewed ✓\n\n*Step 2 of 2 — Scope Sign-off*\nBy confirming below, you are signing off on the scope defined in the PRD. This means:`;
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `PRD reviewed ✓\n\n*Step 2 of 2 — Scope Sign-off*\nBy confirming below, you are signing off on the scope defined in the PRD. This means:\n• You commit to building what is documented\n• You will flag any scope deviations before or during implementation\n• You will deliver within the timeline you provide below\n\n*Do you sign off on this scope?*`,
+        text: `${header}\n• You commit to building what is documented\n• You will flag any scope deviations before or during implementation\n• You will deliver within the timeline you provide below\n\n*Do you sign off on this scope?*`,
       },
     },
     {
@@ -988,6 +991,7 @@ export async function handleResolve(featureName: string, ownerName: string): Pro
     return;
   }
 
+  const resolvedConcern = entry.concerns;
   entry.status = 'Scope Review';
   entry.concerns = '';
   await saveSignoffEntry(entry);
@@ -1000,12 +1004,12 @@ export async function handleResolve(featureName: string, ownerName: string): Pro
     pmDmChannel: entry.pmDmChannel, prdUrl: '',
   };
   const newMsgTs = await postMessage(entry.channelId,
-    `The PM has resolved the concern. ${ctx.ownerMention} please proceed with your sign-off below.`,
-    { blocks: scopeReviewBlocks({ ...ctx, msgTs: '' }), threadTs: entry.ownerThreadTs },
+    `Concern resolved for ${entry.ownerName} (${entry.track}) — please proceed with sign-off.`,
+    { blocks: scopeReviewBlocks({ ...ctx, msgTs: '' }, resolvedConcern), threadTs: entry.ownerThreadTs },
   );
   if (newMsgTs) {
-    await updateMessage(entry.channelId, newMsgTs, `Scope sign-off for ${entry.ownerName}`,
-      scopeReviewBlocks({ ...ctx, msgTs: newMsgTs }),
+    await updateMessage(entry.channelId, newMsgTs, `Scope sign-off for ${entry.ownerName} (${entry.track})`,
+      scopeReviewBlocks({ ...ctx, msgTs: newMsgTs }, resolvedConcern),
     );
   }
 }
