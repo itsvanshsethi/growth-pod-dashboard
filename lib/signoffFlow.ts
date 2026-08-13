@@ -560,7 +560,7 @@ async function checkCompletion(
 
 // ── Rescope ────────────────────────────────────────────────────────────────────
 
-export async function handleRescope(featureName: string, reason: string): Promise<void> {
+export async function handleRescope(featureName: string, reason: string, tracksFilter?: string[]): Promise<void> {
   const entries = await getEntriesForFeature(featureName);
   const coordinator = entries.find(e => e.track === 'COORDINATOR');
   if (!coordinator) return;
@@ -577,7 +577,7 @@ export async function handleRescope(featureName: string, reason: string): Promis
   // Post notice in parent thread
   if (coordinator.channelId && coordinator.parentThreadTs) {
     await postMessage(coordinator.channelId,
-      `⚠️ *Scope revision: ${featureName}*\nReason: ${reason}\nAll previous sign-offs are now void. A fresh sign-off round will begin — owners will be re-requested in their existing threads.`,
+      `⚠️ *Scope revision: ${featureName}*\nReason: ${reason}\n${tracksFilter ? `Tracks affected: ${tracksFilter.join(', ')}` : 'All previous sign-offs are now void'}. A fresh sign-off round will begin — owners will be re-requested in their existing threads.`,
       { threadTs: coordinator.parentThreadTs },
     );
   }
@@ -590,7 +590,16 @@ export async function handleRescope(featureName: string, reason: string): Promis
   coordinator.status = 'Confirmed';
   await saveSignoffEntry(coordinator);
 
-  const ownerEntries = entries.filter(e => e.track !== 'COORDINATOR' && e.round === oldRound);
+  // Deduplicate by track — take latest entry per track
+  const allOwnerEntries = entries.filter(e => e.track !== 'COORDINATOR' && e.round === oldRound);
+  const latestByTrack = new Map<string, SignoffEntry>();
+  for (const e of allOwnerEntries) {
+    const existing = latestByTrack.get(e.track);
+    if (!existing || e.rowIndex > existing.rowIndex) latestByTrack.set(e.track, e);
+  }
+  const ownerEntries = Array.from(latestByTrack.values()).filter(e =>
+    !tracksFilter || tracksFilter.map(t => t.toLowerCase()).includes(e.track.toLowerCase())
+  );
   for (const old of ownerEntries) {
     // Re-resolve owner ID from Escalation Matrix in case it was added/updated since last round
     const mappings = await getOwnerMappings(old.ownerName);
