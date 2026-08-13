@@ -801,10 +801,6 @@ export async function handleResolve(featureName: string, ownerName: string): Pro
 
 // ── Polling: reminders + auto-initiation ──────────────────────────────────────
 
-const REMINDER_1_MS = 24 * 60 * 60 * 1000;
-const REMINDER_2_MS = 12 * 60 * 60 * 1000;
-const ESCALATION_MS = 12 * 60 * 60 * 1000;
-
 export async function checkAndSendReminders(): Promise<void> {
   const now = Date.now();
   const entries = await getAllSignoffEntries();
