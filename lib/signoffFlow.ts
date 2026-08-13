@@ -85,6 +85,38 @@ function scopeReviewBlocks(ctx: ActionContext): Record<string, unknown>[] {
   ];
 }
 
+function reminder1Blocks(ownerMention: string, featureName: string, track: string, round: string): Record<string, unknown>[] {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `🔔 *Reminder — sign-off pending*\n${ownerMention}, your sign-off for *${featureName}* is still pending. Please respond in this thread when you get a chance.`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `${track} · Round ${round} · 24h since request was sent` }],
+    },
+  ];
+}
+
+function reminder2Blocks(ownerMention: string, featureName: string, track: string, round: string): Record<string, unknown>[] {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `⚠️ *Second reminder — sign-off still needed*\n${ownerMention}, this is your second reminder for *${featureName}*. If there's no response soon, the PM will be notified to escalate.`,
+      },
+    },
+    {
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `${track} · Round ${round} · 48h since request was sent` }],
+    },
+  ];
+}
+
 function escalationBlocks(ctx: ActionContext, ownerName: string): Record<string, unknown>[] {
   const ctxStr = JSON.stringify(ctx);
   return [
@@ -814,19 +846,19 @@ export async function checkAndSendReminders(): Promise<void> {
     const lastReminded = entry.lastRemindedAt ? new Date(entry.lastRemindedAt).getTime() : 0;
     const rc = parseInt(entry.reminderCount, 10);
 
+    const ownerMention = entry.ownerSlackId.startsWith('U') ? `<@${entry.ownerSlackId}>` : entry.ownerName;
+
     if (rc === 0 && now - initiated >= REMINDER_1_MS) {
-      await postMessage(entry.channelId,
-        `Reminder: <@${entry.ownerSlackId}>, your sign-off is still pending for *${entry.featureName}* (${entry.track}). Please respond above when you get a chance.`,
-        { threadTs: entry.ownerThreadTs },
+      await postMessage(entry.channelId, `Reminder: sign-off still pending for ${entry.featureName} (${entry.track})`,
+        { blocks: reminder1Blocks(ownerMention, entry.featureName, entry.track, entry.round), threadTs: entry.ownerThreadTs },
       );
       entry.reminderCount = '1';
       entry.lastRemindedAt = new Date().toISOString();
       await saveSignoffEntry(entry);
 
     } else if (rc === 1 && lastReminded && now - lastReminded >= REMINDER_2_MS) {
-      await postMessage(entry.channelId,
-        `Second reminder: <@${entry.ownerSlackId}>, your sign-off is still needed for *${entry.featureName}* (${entry.track}). The PM has been notified if there's no response soon.`,
-        { threadTs: entry.ownerThreadTs },
+      await postMessage(entry.channelId, `Second reminder: sign-off still needed for ${entry.featureName} (${entry.track})`,
+        { blocks: reminder2Blocks(ownerMention, entry.featureName, entry.track, entry.round), threadTs: entry.ownerThreadTs },
       );
       entry.reminderCount = '2';
       entry.lastRemindedAt = new Date().toISOString();
