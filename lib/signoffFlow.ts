@@ -653,7 +653,10 @@ async function checkCompletion(
 
 export async function handleRescope(featureName: string, reason: string, tracksFilter?: string[]): Promise<void> {
   const entries = await getEntriesForFeature(featureName);
-  const coordinator = entries.find(e => e.track === 'COORDINATOR');
+  // Use the most recent coordinator (highest round)
+  const coordinator = entries
+    .filter(e => e.track === 'COORDINATOR')
+    .sort((a, b) => parseInt(b.round, 10) - parseInt(a.round, 10))[0];
   if (!coordinator) return;
 
   const oldRound = coordinator.round;
@@ -676,6 +679,19 @@ export async function handleRescope(featureName: string, reason: string, tracksF
   // Re-initiate for existing owners in their existing threads
   let meta: { prdUrl: string; tracks: Array<{ track: string; ownerName: string }> };
   try { meta = JSON.parse(coordinator.metadata); } catch { meta = { prdUrl: '', tracks: [] }; }
+
+  // If metadata tracks are missing or incomplete, rebuild from the feature sheet
+  if (!meta.tracks || meta.tracks.length === 0) {
+    const featureData = await getFeatureRow(featureName);
+    if (featureData) {
+      meta.tracks = [];
+      if (featureData.designOwner) meta.tracks.push({ track: 'Design', ownerName: featureData.designOwner });
+      if (featureData.beOwner) meta.tracks.push({ track: 'BE', ownerName: featureData.beOwner });
+      if (featureData.feOwner) meta.tracks.push({ track: 'FE', ownerName: featureData.feOwner });
+      if (featureData.qaOwner) meta.tracks.push({ track: 'QA', ownerName: featureData.qaOwner });
+      if (!meta.prdUrl) meta.prdUrl = featureData.prdUrl;
+    }
+  }
 
   coordinator.round = newRound;
   coordinator.status = 'Confirmed';
