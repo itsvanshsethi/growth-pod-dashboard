@@ -141,6 +141,44 @@ function escalationBlocks(ctx: ActionContext, ownerName: string): Record<string,
   ];
 }
 
+// ── Feature name fuzzy resolver ────────────────────────────────────────────────
+
+function normFeat(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function featMatchScore(input: string, candidate: string): number {
+  const a = normFeat(input);
+  const b = normFeat(candidate);
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.9;
+  const aWords = new Set(a.split(' '));
+  const bWords = b.split(' ');
+  const hits = bWords.filter(w => aWords.has(w)).length;
+  return hits / Math.max(aWords.size, bWords.length);
+}
+
+// Returns the canonical feature name from sheet/signoffs that best matches the
+// user's input, or null if nothing scores above 0.4.
+async function resolveFeatureName(input: string): Promise<{ name: string; close: boolean } | null> {
+  const [signoffEntries, { initiatives }] = await Promise.all([
+    getAllSignoffEntries(),
+    fetchInitiatives(),
+  ]);
+  const candidates = new Set<string>();
+  for (const e of signoffEntries) if (e.featureName) candidates.add(e.featureName);
+  for (const i of initiatives) if (i.title) candidates.add(i.title);
+
+  let best: string | null = null;
+  let bestScore = 0;
+  for (const c of candidates) {
+    const score = featMatchScore(input, c);
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  if (!best || bestScore < 0.4) return null;
+  return { name: best, close: bestScore < 1 };
+}
+
 // ── Initiate sign-off ──────────────────────────────────────────────────────────
 
 export async function startSignoff(
@@ -158,6 +196,16 @@ export async function startSignoff(
       if (dmCh) await postMessage(dmCh, msg);
     }
   };
+
+  const resolved = await resolveFeatureName(featureName);
+  if (!resolved) {
+    await postError(`Couldn't find a feature matching *${featureName}* in the sheet. Check the name and try again.`);
+    return;
+  }
+  if (resolved.close) {
+    await postError(`_Interpreted as *${resolved.name}* — proceeding…_`);
+  }
+  featureName = resolved.name;
 
   if (await hasActiveSignoff(featureName)) {
     await postError(`A sign-off flow is already active for *${featureName}*. Use \`/archie-rescope\` to restart it.`);
@@ -684,6 +732,9 @@ async function checkCompletion(
 // ── Rescope ────────────────────────────────────────────────────────────────────
 
 export async function handleRescope(featureName: string, reason: string, tracksFilter?: string[]): Promise<void> {
+  const resolved = await resolveFeatureName(featureName);
+  if (resolved) featureName = resolved.name;
+
   const entries = await getEntriesForFeature(featureName);
   // Use the most recent coordinator (highest round)
   const coordinator = entries
@@ -786,6 +837,9 @@ export async function handleRescope(featureName: string, reason: string, tracksF
 // ── Resolve concern ────────────────────────────────────────────────────────────
 
 export async function handleResolve(featureName: string, ownerName: string): Promise<void> {
+  const resolved = await resolveFeatureName(featureName);
+  if (resolved) featureName = resolved.name;
+
   const entries = await getEntriesForFeature(featureName);
   // Accept either a Slack mention (<@U123>) or a plain name
   const slackIdMatch = ownerName.match(/^<@([A-Z0-9]+)>$/i);
