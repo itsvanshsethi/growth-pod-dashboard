@@ -171,7 +171,7 @@ async function resolveFeatureName(input: string): Promise<{ name: string; close:
 
   let best: string | null = null;
   let bestScore = 0;
-  for (const c of candidates) {
+  for (const c of Array.from(candidates)) {
     const score = featMatchScore(input, c);
     if (score > bestScore) { bestScore = score; best = c; }
   }
