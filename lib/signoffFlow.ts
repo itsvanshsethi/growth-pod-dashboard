@@ -548,11 +548,17 @@ export async function handleButtonAction(
           label: { type: 'plain_text', text: 'Design Owner' },
           element: { type: 'plain_text_input', action_id: 'design_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('Design') ? { initial_value: g('Design') } : {}) } },
         { type: 'input', block_id: 'qa_block', optional: true,
-          label: { type: 'plain_text', text: 'QA Owner (cross-team only)' },
+          label: { type: 'plain_text', text: 'QA Owner' },
           element: { type: 'plain_text_input', action_id: 'qa_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('QA') ? { initial_value: g('QA') } : {}) } },
         { type: 'input', block_id: 'data_block', optional: true,
           label: { type: 'plain_text', text: 'Data / Analytics Owner' },
           element: { type: 'plain_text_input', action_id: 'data_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('Data') ? { initial_value: g('Data') } : {}) } },
+        { type: 'input', block_id: 'platform_block', optional: true,
+          label: { type: 'plain_text', text: 'Platform Owner' },
+          element: { type: 'plain_text_input', action_id: 'platform_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('Platform') ? { initial_value: g('Platform') } : {}) } },
+        { type: 'input', block_id: 'app_platform_block', optional: true,
+          label: { type: 'plain_text', text: 'App Platform Owner' },
+          element: { type: 'plain_text_input', action_id: 'app_platform_input', placeholder: { type: 'plain_text', text: 'Leave blank to skip' }, ...(g('App Platform') ? { initial_value: g('App Platform') } : {}) } },
       ],
     });
     return;
@@ -714,6 +720,8 @@ export async function handleModalSubmit(
       { track: 'Design', blockId: 'design_block', inputId: 'design_input' },
       { track: 'QA', blockId: 'qa_block', inputId: 'qa_input' },
       { track: 'Data', blockId: 'data_block', inputId: 'data_input' },
+      { track: 'Platform', blockId: 'platform_block', inputId: 'platform_input' },
+      { track: 'App Platform', blockId: 'app_platform_block', inputId: 'app_platform_input' },
     ];
     const newTracks = FIELDS
       .map(({ track, blockId, inputId }) => {
