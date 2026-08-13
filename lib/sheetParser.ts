@@ -86,9 +86,9 @@ function deriveChangelog(row: string[], featureName: string, status: Status, goL
 
   const tracks = [
     { name: 'Design', delayDays: getCell(row, COL.DESIGN_DELAY_DAYS), delayReason: getCell(row, COL.DESIGN_DELAY_REASON) },
-    { name: 'BE', delayDays: getCell(row, COL.BE_DELAY_DAYS), delayReason: getCell(row, COL.BE_DELAY_REASON) },
-    { name: 'FE', delayDays: getCell(row, COL.FE_DELAY_DAYS), delayReason: getCell(row, COL.FE_DELAY_REASON) },
-    { name: 'QA', delayDays: getCell(row, COL.QA_DELAY_DAYS), delayReason: getCell(row, COL.QA_DELAY_REASON) },
+    { name: 'BE', delayDays: getCell(row, COL.BE_DELAY), delayReason: getCell(row, COL.BE_DELAY_REASON) },
+    { name: 'FE', delayDays: getCell(row, COL.FE_DELAY), delayReason: getCell(row, COL.FE_DELAY_REASON) },
+    { name: 'QA', delayDays: getCell(row, COL.QA_DELAY), delayReason: getCell(row, COL.QA_DELAY_REASON) },
   ];
 
   tracks.forEach(track => {
