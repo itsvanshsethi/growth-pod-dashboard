@@ -1,5 +1,6 @@
 import { askAI } from './aiClient';
-import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives, updateSignoffDataInSheet } from './googleAuth';
+import { getFeatureRow, updateFeatureStatus, getFeaturesByStatus, fetchInitiatives, updateSignoffDataInSheet, getGoogleAuth, fetchSheetRange, ensureSheetTab, appendToSheet, getFirstSheetName } from './googleAuth';
+import { COL } from './constants';
 import {
   SignoffEntry, getAllSignoffEntries, addSignoffEntry, saveSignoffEntry,
   getEntriesForFeature, findByPMThread, findOwnerEntry, getCurrentRound,
@@ -554,6 +555,20 @@ export async function handleButtonAction(
     return;
   }
 
+  // eta_escalate uses a different payload shape — handle before ActionContext parsing
+  if (actionId === 'eta_escalate') {
+    let ec: { featureName: string; track: string; ownerName: string; eta: string; channelId: string; pmSlackId: string };
+    try { ec = JSON.parse(rawCtx); } catch { return; }
+    const mappings = await getOwnerMappings(ec.ownerName);
+    const resolveHandle = async (h: string) => /^U[A-Z0-9]+$/i.test(h.trim()) ? h.trim() : await resolveUserIdByName(h.replace('@', ''));
+    const ownerMention = mappings.slackHandle ? `<@${await resolveHandle(mappings.slackHandle) ?? ec.ownerName}>` : ec.ownerName;
+    const managerMention = mappings.managerHandle ? `<@${await resolveHandle(mappings.managerHandle) ?? mappings.managerHandle}>` : null;
+    await postMessage(ec.channelId,
+      `⚠️ *ETA Overdue: ${ec.featureName}* (${ec.track})\n${ownerMention} — your ETA of *${ec.eta}* has passed and status hasn't been updated.${managerMention ? `\n${managerMention} — flagging for visibility.` : ''}\nPlease share a new ETA or update your status in the Sprint Plan.`,
+    );
+    return;
+  }
+
   let ctx: ActionContext;
   try { ctx = JSON.parse(rawCtx); } catch { return; }
   // Back-compat: ownerMention may be missing in old button payloads
@@ -1059,5 +1074,99 @@ export async function checkNewSignoffs(): Promise<void> {
   for (const featureName of readyFeatures) {
     if (await hasActiveSignoff(featureName)) continue;
     await startSignoff(featureName, pmSlackId);
+  }
+}
+
+// ── ETA overdue alerts ─────────────────────────────────────────────────────────
+
+const ETA_ALERTS_TAB = 'ETA Alerts';
+
+function parseEtaDate(eta: string): Date | null {
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+  const m = eta.trim().match(/^(\d{1,2})\s+([A-Za-z]{3})/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const mon = months[m[2].toLowerCase()];
+  if (mon === undefined) return null;
+  return new Date(new Date().getFullYear(), mon, day);
+}
+
+async function getRecentEtaAlerts(): Promise<Set<string>> {
+  try {
+    const auth = await getGoogleAuth();
+    const rows = await fetchSheetRange(`${ETA_ALERTS_TAB}!A:D`, auth);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const keys = new Set<string>();
+    for (const row of rows.slice(1)) {
+      const alertedAt = row[3] ? new Date(row[3]).getTime() : 0;
+      if (alertedAt >= cutoff) keys.add(`${row[0]}|${row[1]}|${row[2]}`);
+    }
+    return keys;
+  } catch {
+    return new Set<string>();
+  }
+}
+
+export async function checkEtaOverdue(): Promise<void> {
+  const pmSlackId = PM_SLACK_ID();
+  const channel = SIGNOFF_CHANNEL();
+  if (!pmSlackId || !channel) return;
+
+  const auth = await getGoogleAuth();
+  const firstSheet = await getFirstSheetName(auth);
+  const rows = await fetchSheetRange(`${firstSheet}!A:BA`, auth);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const TRACK_COLS = [
+    { track: 'BE', ownerCol: COL.BE_OWNER, etaCol: COL.BE_ETA, statusCol: COL.BE_STATUS },
+    { track: 'FE', ownerCol: COL.FE_OWNER, etaCol: COL.FE_ETA, statusCol: COL.FE_STATUS },
+    { track: 'QA', ownerCol: COL.QA_OWNER, etaCol: COL.QA_ETA, statusCol: COL.QA_STATUS },
+  ];
+
+  const overdue: Array<{ featureName: string; track: string; ownerName: string; eta: string; status: string }> = [];
+
+  for (const row of rows.slice(2)) {
+    const featureName = (row[COL.FEATURE] ?? '').trim();
+    if (!featureName) continue;
+    for (const { track, ownerCol, etaCol, statusCol } of TRACK_COLS) {
+      const ownerName = (row[ownerCol] ?? '').trim().replace(/^(NA|N\/A|-+)$/i, '');
+      const eta = (row[etaCol] ?? '').trim();
+      const status = (row[statusCol] ?? '').trim().toLowerCase();
+      if (!ownerName || !eta) continue;
+      if (['done', 'live'].includes(status)) continue;
+      const etaDate = parseEtaDate(eta);
+      if (!etaDate || etaDate >= today) continue;
+      overdue.push({ featureName, track, ownerName, eta, status });
+    }
+  }
+
+  if (overdue.length === 0) return;
+
+  const alerted = await getRecentEtaAlerts();
+  const newItems = overdue.filter(i => !alerted.has(`${i.featureName}|${i.track}|${i.eta}`));
+  if (newItems.length === 0) return;
+
+  const pmDmChannel = await getDMChannel(pmSlackId);
+  if (!pmDmChannel) return;
+
+  await ensureSheetTab(ETA_ALERTS_TAB, ['Feature Name', 'Track', 'ETA', 'Alerted At']);
+
+  for (const item of newItems) {
+    const ctx = JSON.stringify({ featureName: item.featureName, track: item.track, ownerName: item.ownerName, eta: item.eta, channelId: channel, pmSlackId });
+    await postMessage(pmDmChannel,
+      `⚠️ ETA overdue: ${item.featureName} (${item.track}) — ${item.ownerName}, ETA was ${item.eta}`,
+      { blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: `⚠️ *ETA Overdue*\n*Feature:* ${item.featureName}\n*Track:* ${item.track}  ·  *Owner:* ${item.ownerName}\n*ETA was:* ${item.eta}  ·  *Status:* ${item.status || '_not updated_'}` } },
+        { type: 'actions', elements: [
+          { type: 'button', style: 'danger', action_id: 'eta_escalate', text: { type: 'plain_text', text: '📢  Escalate to channel' }, value: ctx },
+        ]},
+      ]},
+    );
+    await appendToSheet(ETA_ALERTS_TAB, [item.featureName, item.track, item.eta, new Date().toISOString()]);
   }
 }

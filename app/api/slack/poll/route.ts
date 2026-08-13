@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkAndSendReminders, checkNewSignoffs } from '@/lib/signoffFlow';
+import { checkAndSendReminders, checkNewSignoffs, checkEtaOverdue } from '@/lib/signoffFlow';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +15,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const results = await Promise.allSettled([
     checkNewSignoffs(),
     checkAndSendReminders(),
+    checkEtaOverdue(),
   ]);
 
   const errors = results
